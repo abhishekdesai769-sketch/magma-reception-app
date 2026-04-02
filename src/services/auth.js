@@ -2,10 +2,10 @@ import { PublicClientApplication, InteractionRequiredAuthError } from '@azure/ms
 
 const msalConfig = {
   auth: {
-    clientId: 'YOUR_CLIENT_ID_HERE', // Replace after Azure AD app registration
+    clientId: 'ff008eb4-d7b2-496c-8f53-01c03ac6362b',
     authority: 'https://login.microsoftonline.com/d3e527c4-259d-4e96-aab6-3c6e5402bcbd',
-    redirectUri: window.location.origin,
-    postLogoutRedirectUri: window.location.origin,
+    redirectUri: window.location.origin + '/magma-reception-app/',
+    postLogoutRedirectUri: window.location.origin + '/magma-reception-app/',
   },
   cache: {
     cacheLocation: 'localStorage',
