@@ -4,68 +4,19 @@ import {
   DollarSign,
   Clock,
   ShoppingCart,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
+import { format } from 'date-fns';
 import PageWrapper from '../components/Layout/PageWrapper';
-
-// MOCK DATA - replace with useSharePointList hook
-const mockOrders = [
-  {
-    id: 1,
-    title: 'Office Supply Restock',
-    item: 'Paper 8x11 (10 reams)',
-    vendor: 'Staples',
-    status: 'Ordered',
-    cost: 89.99,
-    dateOrdered: 'Mar 25, 2026',
-    expectedDelivery: 'Apr 1, 2026',
-  },
-  {
-    id: 2,
-    title: 'Kitchen Supplies Q2',
-    item: 'Paper Towels (24-pack)',
-    vendor: 'Costco',
-    status: 'Shipped',
-    cost: 42.5,
-    dateOrdered: 'Mar 22, 2026',
-    expectedDelivery: 'Mar 30, 2026',
-  },
-  {
-    id: 3,
-    title: 'CELPIP Test Materials',
-    item: 'Bottled Water (48-pack)',
-    vendor: 'Costco',
-    status: 'Received',
-    cost: 18.99,
-    dateOrdered: 'Mar 18, 2026',
-    expectedDelivery: 'Mar 22, 2026',
-  },
-  {
-    id: 4,
-    title: 'Bathroom Supplies',
-    item: 'Facial Tissue (12 boxes)',
-    vendor: 'Amazon',
-    status: 'Ordered',
-    cost: 35.4,
-    dateOrdered: 'Mar 27, 2026',
-    expectedDelivery: 'Apr 3, 2026',
-  },
-  {
-    id: 5,
-    title: 'Pen Restock',
-    item: 'Ballpoint Pens (60-pack)',
-    vendor: 'Staples',
-    status: 'Cancelled',
-    cost: 24.99,
-    dateOrdered: 'Mar 15, 2026',
-    expectedDelivery: '\u2014',
-  },
-];
-// END MOCK DATA
+import { useSharePointList } from '../hooks/useSharePointList';
 
 const statusColor = {
   Ordered: '#00d4ff',
   Shipped: '#ffab00',
   Received: '#00e676',
+  Delegated: '#a855f7',
   Cancelled: '#ff3d5a',
 };
 
@@ -82,35 +33,6 @@ const stagger = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.07 } },
 };
-
-const totalSpend = mockOrders
-  .filter((o) => o.status !== 'Cancelled')
-  .reduce((sum, o) => sum + o.cost, 0);
-
-const pendingCount = mockOrders.filter(
-  (o) => o.status === 'Ordered' || o.status === 'Shipped'
-).length;
-
-const summaryCards = [
-  {
-    label: 'Total Orders',
-    value: mockOrders.length,
-    icon: ShoppingCart,
-    color: '#00d4ff',
-  },
-  {
-    label: 'Total Spend',
-    value: `$${totalSpend.toFixed(2)}`,
-    icon: DollarSign,
-    color: '#00e676',
-  },
-  {
-    label: 'Pending',
-    value: pendingCount,
-    icon: Clock,
-    color: '#ffab00',
-  },
-];
 
 const s = {
   header: {
@@ -214,9 +136,105 @@ const s = {
     color: 'var(--text-primary)',
     fontVariantNumeric: 'tabular-nums',
   },
+  loadingWrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 'var(--space-12)',
+    gap: 'var(--space-4)',
+    color: 'var(--text-muted)',
+  },
+  errorWrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 'var(--space-12)',
+    gap: 'var(--space-4)',
+    color: '#ff3d5a',
+  },
+  retryBtn: {
+    padding: 'var(--space-3) var(--space-5)',
+    borderRadius: 'var(--radius-md)',
+    background: 'rgba(255,61,90,0.15)',
+    border: '1px solid rgba(255,61,90,0.3)',
+    color: '#ff3d5a',
+    fontWeight: 600,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+  },
 };
 
+function formatDate(dateStr) {
+  if (!dateStr) return '—';
+  try {
+    return format(new Date(dateStr), 'MMM d, yyyy');
+  } catch {
+    return dateStr;
+  }
+}
+
 export default function PurchaseOrders() {
+  const { data: rawData, loading, error, refresh } = useSharePointList('purchaseOrders');
+
+  // Map SharePoint fields to UI shape
+  const orders = rawData.map((item) => ({
+    id: item.id,
+    title: item.fields?.Title || 'Untitled',
+    item: item.fields?.ItemOrdered || '—',
+    vendor: item.fields?.Vendor || '—',
+    status: item.fields?.OrderStatus || 'Ordered',
+    cost: item.fields?.Cost ?? 0,
+    dateOrdered: formatDate(item.fields?.DateOrdered),
+    expectedDelivery: formatDate(item.fields?.ExpectedDelivery),
+  }));
+
+  const totalSpend = orders
+    .filter((o) => o.status !== 'Cancelled')
+    .reduce((sum, o) => sum + (o.cost || 0), 0);
+
+  const pendingCount = orders.filter(
+    (o) => o.status === 'Ordered' || o.status === 'Shipped'
+  ).length;
+
+  const summaryCards = [
+    { label: 'Total Orders', value: orders.length, icon: ShoppingCart, color: '#00d4ff' },
+    { label: 'Total Spend', value: `$${totalSpend.toFixed(2)}`, icon: DollarSign, color: '#00e676' },
+    { label: 'Pending', value: pendingCount, icon: Clock, color: '#ffab00' },
+  ];
+
+  if (loading && rawData.length === 0) {
+    return (
+      <PageWrapper title="Purchase Orders">
+        <div style={s.loadingWrap}>
+          <Loader2 size={32} style={{ animation: 'spin 1s linear infinite' }} />
+          <span>Loading purchase orders...</span>
+          <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </PageWrapper>
+    );
+  }
+
+  if (error && rawData.length === 0) {
+    return (
+      <PageWrapper title="Purchase Orders">
+        <div style={s.errorWrap}>
+          <AlertCircle size={32} />
+          <span>Failed to load purchase orders</span>
+          <span style={{ fontSize: 'var(--text-xs)', maxWidth: 400, textAlign: 'center', opacity: 0.7 }}>
+            {error.message}
+          </span>
+          <button style={s.retryBtn} onClick={refresh}>
+            <RefreshCw size={14} /> Retry
+          </button>
+        </div>
+      </PageWrapper>
+    );
+  }
+
   return (
     <PageWrapper title="Purchase Orders">
       <motion.div initial="hidden" animate="visible" variants={stagger}>
@@ -277,7 +295,14 @@ export default function PurchaseOrders() {
               </tr>
             </thead>
             <tbody>
-              {mockOrders.map((order) => (
+              {orders.length === 0 && (
+                <tr>
+                  <td colSpan={7} style={{ ...s.td, textAlign: 'center', color: 'var(--text-dim)', padding: 'var(--space-8)' }}>
+                    No purchase orders found.
+                  </td>
+                </tr>
+              )}
+              {orders.map((order) => (
                 <motion.tr
                   key={order.id}
                   style={{ cursor: 'pointer' }}
@@ -307,7 +332,7 @@ export default function PurchaseOrders() {
                     </span>
                   </td>
                   <td style={{ ...s.td, ...s.cost }}>
-                    ${order.cost.toFixed(2)}
+                    ${(order.cost || 0).toFixed(2)}
                   </td>
                   <td
                     style={{

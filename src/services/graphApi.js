@@ -5,7 +5,7 @@ const SHAREPOINT_SITE_URL = 'magmaamgmorg.sharepoint.com:/sites/Intake2/Receptio
 
 const LIST_NAMES = {
   supplyRequests: 'Supply Requests',
-  inventory: 'Inventory',
+  inventory: 'Reception Inventory',
   clientLog: 'Client Log',
   purchaseOrders: 'Purchase Orders',
 };

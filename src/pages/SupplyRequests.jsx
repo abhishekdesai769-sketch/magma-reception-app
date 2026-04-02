@@ -5,85 +5,14 @@ import {
   Filter,
   Calendar,
   User,
+  Loader2,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
+import { format } from 'date-fns';
 import PageWrapper from '../components/Layout/PageWrapper';
-
-// MOCK DATA - replace with useSharePointList hook
-const mockRequests = [
-  {
-    id: 1,
-    title: 'Paper 8x11 Restock',
-    requester: 'Sarah M.',
-    department: 'Reception',
-    urgency: 'High',
-    date: 'Mar 28',
-    status: 'New',
-  },
-  {
-    id: 2,
-    title: 'Whiteboard Markers',
-    requester: 'James L.',
-    department: 'CELPIP',
-    urgency: 'Medium',
-    date: 'Mar 27',
-    status: 'New',
-  },
-  {
-    id: 3,
-    title: 'Facial Tissue Boxes',
-    requester: 'Maria S.',
-    department: 'Reception',
-    urgency: 'Low',
-    date: 'Mar 26',
-    status: 'Received',
-  },
-  {
-    id: 4,
-    title: 'Printer Ink Cartridge',
-    requester: 'David K.',
-    department: 'Admin',
-    urgency: 'High',
-    date: 'Mar 25',
-    status: 'Pending Order',
-  },
-  {
-    id: 5,
-    title: 'Hand Sanitizer Refill',
-    requester: 'Aisha R.',
-    department: 'Kitchen',
-    urgency: 'Medium',
-    date: 'Mar 24',
-    status: 'Ready to Pick Up',
-  },
-  {
-    id: 6,
-    title: 'Stapler & Staples',
-    requester: 'Carlos R.',
-    department: 'Admin',
-    urgency: 'Low',
-    date: 'Mar 23',
-    status: 'Completed',
-  },
-  {
-    id: 7,
-    title: 'CELPIP Test Water',
-    requester: 'Sarah M.',
-    department: 'CELPIP',
-    urgency: 'High',
-    date: 'Mar 28',
-    status: 'New',
-  },
-  {
-    id: 8,
-    title: 'Paper Towel Roll',
-    requester: 'James L.',
-    department: 'Kitchen',
-    urgency: 'Medium',
-    date: 'Mar 22',
-    status: 'Completed',
-  },
-];
-// END MOCK DATA
+import { useSharePointList } from '../hooks/useSharePointList';
+import { updateSupplyRequest } from '../services/graphApi';
 
 const columns = [
   { key: 'New', label: 'New', color: '#ff3d5a' },
@@ -93,20 +22,25 @@ const columns = [
   { key: 'Completed', label: 'Completed', color: '#8b949e' },
 ];
 
-const departments = ['All', 'Reception', 'CELPIP', 'Admin', 'Kitchen'];
-const urgencies = ['All', 'High', 'Medium', 'Low'];
+const departments = ['All', 'Reception', 'CELPIP', 'Administration', 'Kitchen', 'Settlement', 'Language', 'IT', 'Finance', 'HR', 'Facilities'];
+const urgencies = ['All', 'Urgent', 'Normal'];
 
 const urgencyColor = {
-  High: '#ff3d5a',
-  Medium: '#ffab00',
-  Low: '#00e676',
+  Urgent: '#ff3d5a',
+  Normal: '#00e676',
 };
 
 const deptColor = {
   Reception: '#00d4ff',
   CELPIP: '#a855f7',
-  Admin: '#ffab00',
+  Administration: '#ffab00',
   Kitchen: '#00e676',
+  Settlement: '#26a69a',
+  Language: '#ff006e',
+  IT: '#00b0ff',
+  Finance: '#f5c542',
+  HR: '#e040fb',
+  Facilities: '#8b949e',
 };
 
 const fadeInUp = {
@@ -244,17 +178,97 @@ const s = {
     alignItems: 'center',
     marginTop: 'var(--space-3)',
   },
+  loadingWrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 'var(--space-12)',
+    gap: 'var(--space-4)',
+    color: 'var(--text-muted)',
+  },
+  errorWrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 'var(--space-12)',
+    gap: 'var(--space-4)',
+    color: '#ff3d5a',
+  },
+  retryBtn: {
+    padding: 'var(--space-3) var(--space-5)',
+    borderRadius: 'var(--radius-md)',
+    background: 'rgba(255,61,90,0.15)',
+    border: '1px solid rgba(255,61,90,0.3)',
+    color: '#ff3d5a',
+    fontWeight: 600,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+  },
 };
+
+function formatDate(dateStr) {
+  if (!dateStr) return '—';
+  try {
+    return format(new Date(dateStr), 'MMM d');
+  } catch {
+    return dateStr;
+  }
+}
 
 export default function SupplyRequests() {
   const [deptFilter, setDeptFilter] = useState('All');
   const [urgencyFilter, setUrgencyFilter] = useState('All');
+  const { data: rawData, loading, error, refresh } = useSharePointList('supplyRequests');
 
-  const filtered = mockRequests.filter((r) => {
+  // Map SharePoint fields to UI shape
+  const requests = rawData.map((item) => ({
+    id: item.id,
+    title: item.fields?.Title || 'Untitled',
+    requester: item.fields?.RequestedBy?.LookupValue || item.fields?.RequestedBy || '—',
+    department: item.fields?.Department || '—',
+    urgency: item.fields?.Urgency || 'Normal',
+    date: formatDate(item.fields?.DateOfRequest),
+    status: item.fields?.Status || 'New',
+  }));
+
+  const filtered = requests.filter((r) => {
     if (deptFilter !== 'All' && r.department !== deptFilter) return false;
     if (urgencyFilter !== 'All' && r.urgency !== urgencyFilter) return false;
     return true;
   });
+
+  if (loading && rawData.length === 0) {
+    return (
+      <PageWrapper title="Supply Requests">
+        <div style={s.loadingWrap}>
+          <Loader2 size={32} style={{ animation: 'spin 1s linear infinite' }} />
+          <span>Loading supply requests...</span>
+          <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </PageWrapper>
+    );
+  }
+
+  if (error && rawData.length === 0) {
+    return (
+      <PageWrapper title="Supply Requests">
+        <div style={s.errorWrap}>
+          <AlertCircle size={32} />
+          <span>Failed to load supply requests</span>
+          <span style={{ fontSize: 'var(--text-xs)', maxWidth: 400, textAlign: 'center', opacity: 0.7 }}>
+            {error.message}
+          </span>
+          <button style={s.retryBtn} onClick={refresh}>
+            <RefreshCw size={14} /> Retry
+          </button>
+        </div>
+      </PageWrapper>
+    );
+  }
 
   return (
     <PageWrapper title="Supply Requests">

@@ -6,59 +6,21 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   AlertTriangle,
+  Loader2,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import PageWrapper from '../components/Layout/PageWrapper';
-
-// MOCK DATA - replace with useSharePointList hook
-const inventoryItems = [
-  {
-    id: 1,
-    name: 'Paper 8x11',
-    category: 'Office',
-    quantity: 3,
-    threshold: 10,
-    vendor: 'Staples',
-  },
-  {
-    id: 2,
-    name: 'Facial Tissue',
-    category: 'Bathroom',
-    quantity: 12,
-    threshold: 10,
-    vendor: 'Costco',
-  },
-  {
-    id: 3,
-    name: 'Paper Towel',
-    category: 'Kitchen',
-    quantity: 2,
-    threshold: 8,
-    vendor: 'Costco',
-  },
-  {
-    id: 4,
-    name: 'CELPIP Water',
-    category: 'CELPIP',
-    quantity: 8,
-    threshold: 12,
-    vendor: 'Costco',
-  },
-  {
-    id: 5,
-    name: 'Pens',
-    category: 'Office',
-    quantity: 1,
-    threshold: 15,
-    vendor: 'Staples',
-  },
-];
-// END MOCK DATA
+import { useSharePointList } from '../hooks/useSharePointList';
+import { updateInventoryItem } from '../services/graphApi';
 
 const categoryColor = {
-  Office: '#00d4ff',
-  Kitchen: '#00e676',
+  'Office Supplies': '#00d4ff',
+  'Kitchen/Break Room': '#00e676',
+  Cleaning: '#26a69a',
   Bathroom: '#a855f7',
   CELPIP: '#26c6da',
+  Other: '#8b949e',
 };
 
 const fadeInUp = {
@@ -76,12 +38,14 @@ const stagger = {
 };
 
 function getStockColor(quantity, threshold) {
+  if (!threshold || threshold === 0) return '#00e676';
   if (quantity <= threshold * 0.3) return '#ff3d5a';
   if (quantity <= threshold * 0.7) return '#ffab00';
   return '#00e676';
 }
 
 function getStockPercent(quantity, threshold) {
+  if (!threshold || threshold === 0) return 50;
   return Math.min(100, (quantity / (threshold * 2)) * 100);
 }
 
@@ -232,15 +196,86 @@ const s = {
     color: 'var(--text-dim)',
     marginTop: 'auto',
   },
+  loadingWrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 'var(--space-12)',
+    gap: 'var(--space-4)',
+    color: 'var(--text-muted)',
+  },
+  errorWrap: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 'var(--space-12)',
+    gap: 'var(--space-4)',
+    color: '#ff3d5a',
+  },
+  retryBtn: {
+    padding: 'var(--space-3) var(--space-5)',
+    borderRadius: 'var(--radius-md)',
+    background: 'rgba(255,61,90,0.15)',
+    border: '1px solid rgba(255,61,90,0.3)',
+    color: '#ff3d5a',
+    fontWeight: 600,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 'var(--space-2)',
+  },
 };
 
 export default function Inventory() {
   const [search, setSearch] = useState('');
   const [mode, setMode] = useState('in');
+  const { data: rawData, loading, error, refresh } = useSharePointList('inventory');
 
-  const filtered = inventoryItems.filter((item) =>
+  // Map SharePoint fields to UI shape
+  const items = rawData.map((item) => ({
+    id: item.id,
+    name: item.fields?.Title || 'Unnamed',
+    category: item.fields?.Category || 'Other',
+    quantity: item.fields?.CurrentQuantity ?? 0,
+    threshold: item.fields?.MinimumThreshold ?? 0,
+    vendor: item.fields?.PreferredVendor || '—',
+    unit: item.fields?.Unit || '',
+  }));
+
+  const filtered = items.filter((item) =>
     item.name.toLowerCase().includes(search.toLowerCase())
   );
+
+  if (loading && rawData.length === 0) {
+    return (
+      <PageWrapper title="Inventory">
+        <div style={s.loadingWrap}>
+          <Loader2 size={32} style={{ animation: 'spin 1s linear infinite' }} />
+          <span>Loading inventory...</span>
+          <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+        </div>
+      </PageWrapper>
+    );
+  }
+
+  if (error && rawData.length === 0) {
+    return (
+      <PageWrapper title="Inventory">
+        <div style={s.errorWrap}>
+          <AlertCircle size={32} />
+          <span>Failed to load inventory</span>
+          <span style={{ fontSize: 'var(--text-xs)', maxWidth: 400, textAlign: 'center', opacity: 0.7 }}>
+            {error.message}
+          </span>
+          <button style={s.retryBtn} onClick={refresh}>
+            <RefreshCw size={14} /> Retry
+          </button>
+        </div>
+      </PageWrapper>
+    );
+  }
 
   return (
     <PageWrapper title="Inventory">
@@ -292,7 +327,7 @@ export default function Inventory() {
         {/* Item Grid */}
         <motion.div style={s.grid} variants={stagger}>
           {filtered.map((item, i) => {
-            const isLow = item.quantity <= item.threshold;
+            const isLow = item.threshold > 0 && item.quantity <= item.threshold;
             const stockColor = getStockColor(item.quantity, item.threshold);
             const percent = getStockPercent(item.quantity, item.threshold);
             const catColor = categoryColor[item.category] || '#8b949e';
@@ -327,7 +362,9 @@ export default function Inventory() {
 
                 <div style={s.qtyRow}>
                   <span style={s.qtyNumber(stockColor)}>{item.quantity}</span>
-                  <span style={s.qtyLabel}>/ {item.threshold} threshold</span>
+                  <span style={s.qtyLabel}>
+                    {item.unit ? `${item.unit} ` : ''}/ {item.threshold} threshold
+                  </span>
                 </div>
 
                 <div style={s.progressTrack}>
@@ -340,7 +377,7 @@ export default function Inventory() {
           })}
         </motion.div>
 
-        {filtered.length === 0 && (
+        {filtered.length === 0 && !loading && (
           <div
             style={{
               textAlign: 'center',
@@ -348,7 +385,7 @@ export default function Inventory() {
               color: 'var(--text-dim)',
             }}
           >
-            No items match your search.
+            {search ? 'No items match your search.' : 'No inventory items found.'}
           </div>
         )}
       </motion.div>

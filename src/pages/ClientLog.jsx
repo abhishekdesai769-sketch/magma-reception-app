@@ -8,18 +8,13 @@ import {
   Check,
   Loader2,
   User,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
+import { format } from 'date-fns';
 import PageWrapper from '../components/Layout/PageWrapper';
-
-// MOCK DATA - replace with useSharePointList hook
-const todaysEntries = [
-  { id: 1, name: 'Maria Santos', reason: 'Settlement Services', status: 'PR', time: '9:15 AM' },
-  { id: 2, name: 'Ahmed Khan', reason: 'Language Assessment', status: 'AS', time: '9:42 AM' },
-  { id: 3, name: 'Li Wei', reason: 'Document Assistance', status: 'WP', time: '10:05 AM' },
-  { id: 4, name: 'Fatima Al-Rashid', reason: 'Appointment', status: 'Refugee', time: '10:30 AM' },
-  { id: 5, name: 'Carlos Rivera', reason: 'Walk-in', status: 'PR', time: '11:02 AM' },
-];
-// END MOCK DATA
+import { useSharePointList } from '../hooks/useSharePointList';
+import { createClientLogEntry } from '../services/graphApi';
 
 const reasonOptions = [
   'Settlement Services',
@@ -42,7 +37,8 @@ const statusOptions = [
   { label: 'Refugee', color: '#26a69a' },
 ];
 
-const interactionTypes = ['In-Person', 'Phone', 'Email'];
+const interactionTypes = ['In-Person Visit', 'Phone Call', 'Email'];
+const interactionLabels = { 'In-Person Visit': 'In-Person', 'Phone Call': 'Phone', 'Email': 'Email' };
 
 const fadeInUp = {
   hidden: { opacity: 0, y: 20 },
@@ -278,6 +274,15 @@ function getStatusColor(status) {
   return opt ? opt.color : '#8b949e';
 }
 
+function formatTime(dateStr) {
+  if (!dateStr) return '';
+  try {
+    return format(new Date(dateStr), 'h:mm a');
+  } catch {
+    return '';
+  }
+}
+
 export default function ClientLog() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -285,21 +290,63 @@ export default function ClientLog() {
   const [statusCanada, setStatusCanada] = useState('');
   const [language, setLanguage] = useState('English');
   const [familyMembers, setFamilyMembers] = useState(1);
-  const [interaction, setInteraction] = useState('In-Person');
+  const [interaction, setInteraction] = useState('In-Person Visit');
   const [showMore, setShowMore] = useState(false);
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [notes, setNotes] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
 
-  const handleSubmit = () => {
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+  const { data: rawData, loading, error, refresh } = useSharePointList('clientLog');
+
+  // Map SharePoint fields to UI shape
+  const entries = rawData.map((item) => ({
+    id: item.id,
+    name: item.fields?.Title || `${item.fields?.FirstName || ''} ${item.fields?.LastName || ''}`.trim() || 'Unknown',
+    reason: item.fields?.ReasonForVisit || '—',
+    status: item.fields?.StatusInCanada || '—',
+    time: formatTime(item.fields?.DateOfInteraction),
+  }));
+
+  const handleSubmit = async () => {
+    if (!firstName || !lastName) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await createClientLogEntry({
+        Title: `${firstName} ${lastName}`,
+        FirstName: firstName,
+        LastName: lastName,
+        ReasonForVisit: reason || undefined,
+        StatusInCanada: statusCanada || undefined,
+        PreferredLanguage: language,
+        NumberOfFamilyMembers: familyMembers,
+        InteractionType: interaction,
+        PhoneNumber: phone || undefined,
+        EmailAddress: email || undefined,
+        Notes: notes || undefined,
+      });
       setSuccess(true);
+      setFirstName('');
+      setLastName('');
+      setReason('');
+      setStatusCanada('');
+      setLanguage('English');
+      setFamilyMembers(1);
+      setInteraction('In-Person Visit');
+      setPhone('');
+      setEmail('');
+      setNotes('');
+      refresh();
       setTimeout(() => setSuccess(false), 2000);
-    }, 1200);
+    } catch (err) {
+      console.error('Failed to submit client log:', err);
+      setSubmitError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -307,7 +354,9 @@ export default function ClientLog() {
       <motion.div initial="hidden" animate="visible" variants={stagger}>
         {/* Header with count badge */}
         <motion.div style={s.header} variants={fadeInUp} custom={0}>
-          <span style={s.badge}>{todaysEntries.length} clients this month</span>
+          <span style={s.badge}>
+            {loading ? '...' : entries.length} clients logged
+          </span>
         </motion.div>
 
         {/* Form */}
@@ -424,7 +473,7 @@ export default function ClientLog() {
                     : { boxShadow: 'none' }
                 }
               >
-                {type}
+                {interactionLabels[type] || type}
               </motion.button>
             ))}
           </div>
@@ -476,19 +525,26 @@ export default function ClientLog() {
             )}
           </AnimatePresence>
 
+          {/* Submit Error */}
+          {submitError && (
+            <div style={{ color: '#ff3d5a', fontSize: 'var(--text-sm)', marginTop: 'var(--space-2)', textAlign: 'center' }}>
+              {submitError}
+            </div>
+          )}
+
           {/* Submit */}
           <motion.button
-            style={s.submitBtn(loading, success)}
+            style={s.submitBtn(submitting, success)}
             onClick={handleSubmit}
-            disabled={loading}
+            disabled={submitting || !firstName || !lastName}
             whileHover={
-              !loading && !success
+              !submitting && !success
                 ? { scale: 1.02, boxShadow: '0 0 30px rgba(0,212,255,0.4)' }
                 : {}
             }
-            whileTap={!loading ? { scale: 0.98 } : {}}
+            whileTap={!submitting ? { scale: 0.98 } : {}}
           >
-            {loading ? (
+            {submitting ? (
               <>
                 <Loader2
                   size={20}
@@ -507,7 +563,7 @@ export default function ClientLog() {
           </motion.button>
         </motion.div>
 
-        {/* Today's Entries */}
+        {/* Recent Entries */}
         <motion.div variants={fadeInUp} custom={2}>
           <h2
             style={{
@@ -516,29 +572,49 @@ export default function ClientLog() {
               marginBottom: 'var(--space-4)',
             }}
           >
-            Today's Entries
+            Recent Entries
           </h2>
         </motion.div>
-        <motion.div style={s.entriesCard} variants={stagger}>
-          {todaysEntries.map((entry, i) => (
-            <motion.div
-              key={entry.id}
-              style={s.entryItem}
-              variants={fadeInUp}
-              custom={3 + i}
-            >
-              <User size={16} color="var(--text-dim)" />
-              <div style={{ flex: 1 }}>
-                <div style={s.entryName}>{entry.name}</div>
-                <div style={s.entryReason}>{entry.reason}</div>
+
+        {loading && rawData.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 'var(--space-8)', color: 'var(--text-muted)' }}>
+            <Loader2 size={24} style={{ animation: 'clientlog-spin 1s linear infinite' }} />
+          </div>
+        ) : error && rawData.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 'var(--space-8)', color: '#ff3d5a' }}>
+            <AlertCircle size={24} />
+            <p style={{ marginTop: 8 }}>Failed to load entries</p>
+            <button style={{ ...s.input, maxWidth: 120, cursor: 'pointer', marginTop: 8, textAlign: 'center' }} onClick={refresh}>
+              Retry
+            </button>
+          </div>
+        ) : (
+          <motion.div style={s.entriesCard} variants={stagger}>
+            {entries.length === 0 && (
+              <div style={{ textAlign: 'center', padding: 'var(--space-6)', color: 'var(--text-dim)' }}>
+                No entries yet. Log your first client visit above.
               </div>
-              <span style={s.entryBadge(getStatusColor(entry.status))}>
-                {entry.status}
-              </span>
-              <span style={s.entryTime}>{entry.time}</span>
-            </motion.div>
-          ))}
-        </motion.div>
+            )}
+            {entries.slice(0, 20).map((entry, i) => (
+              <motion.div
+                key={entry.id}
+                style={s.entryItem}
+                variants={fadeInUp}
+                custom={3 + i}
+              >
+                <User size={16} color="var(--text-dim)" />
+                <div style={{ flex: 1 }}>
+                  <div style={s.entryName}>{entry.name}</div>
+                  <div style={s.entryReason}>{entry.reason}</div>
+                </div>
+                <span style={s.entryBadge(getStatusColor(entry.status))}>
+                  {entry.status}
+                </span>
+                <span style={s.entryTime}>{entry.time}</span>
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
 
         {/* Spin keyframes */}
         <style>{`
