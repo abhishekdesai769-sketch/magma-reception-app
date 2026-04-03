@@ -1,7 +1,7 @@
 import { getAccessToken } from './auth';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
-const SHAREPOINT_SITE_URL = 'magmaamgmorg.sharepoint.com:/sites/Intake2/ReceptionInventoryManagement';
+const SHAREPOINT_SITE_URL = import.meta.env.VITE_SHAREPOINT_SITE_URL;
 
 const LIST_NAMES = {
   supplyRequests: 'Supply Requests',

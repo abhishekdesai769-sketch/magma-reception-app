@@ -2,8 +2,8 @@ import { PublicClientApplication, InteractionRequiredAuthError } from '@azure/ms
 
 const msalConfig = {
   auth: {
-    clientId: 'ff008eb4-d7b2-496c-8f53-01c03ac6362b',
-    authority: 'https://login.microsoftonline.com/d3e527c4-259d-4e96-aab6-3c6e5402bcbd',
+    clientId: import.meta.env.VITE_AZURE_CLIENT_ID,
+    authority: `https://login.microsoftonline.com/${import.meta.env.VITE_AZURE_TENANT_ID}`,
     redirectUri: window.location.origin + '/magma-reception-app/',
     postLogoutRedirectUri: window.location.origin + '/magma-reception-app/',
   },
