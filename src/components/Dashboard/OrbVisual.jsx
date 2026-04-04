@@ -247,7 +247,12 @@ function OrbRings() {
   );
 }
 
-export default function OrbVisual({ healthScore = 80, stats }) {
+export default function OrbVisual({ healthScore = 80, stats, actionItems }) {
+  const totalActions = actionItems?.total ?? 0;
+  const statusColor = healthScore >= 75 ? '#00e676' : healthScore >= 40 ? '#ffab00' : '#ff3d5a';
+  const statusGlow = healthScore >= 75 ? 'rgba(0,230,118,0.5)' : healthScore >= 40 ? 'rgba(255,171,0,0.5)' : 'rgba(255,61,90,0.5)';
+  const statusLabel = totalActions === 0 ? 'All Clear' : `${totalActions} Action${totalActions !== 1 ? 's' : ''} Needed`;
+
   return (
     <div style={{ position: 'relative', width: '100%', height: 340 }}>
       <Canvas
@@ -268,8 +273,9 @@ export default function OrbVisual({ healthScore = 80, stats }) {
       {/* Floating stat overlays */}
       {stats && (
         <>
+          {/* Top left — Clients this month */}
           <div style={{
-            position: 'absolute', top: 30, left: '10%',
+            position: 'absolute', top: 30, left: '8%',
             textAlign: 'center', pointerEvents: 'none',
           }}>
             <div style={{ fontSize: 28, fontWeight: 800, color: '#00d4ff', textShadow: '0 0 20px rgba(0,212,255,0.5)' }}>
@@ -279,8 +285,10 @@ export default function OrbVisual({ healthScore = 80, stats }) {
               Clients This Month
             </div>
           </div>
+
+          {/* Top right — Monthly spend */}
           <div style={{
-            position: 'absolute', top: 30, right: '10%',
+            position: 'absolute', top: 30, right: '8%',
             textAlign: 'center', pointerEvents: 'none',
           }}>
             <div style={{ fontSize: 28, fontWeight: 800, color: '#00e676', textShadow: '0 0 20px rgba(0,230,118,0.5)' }}>
@@ -290,18 +298,39 @@ export default function OrbVisual({ healthScore = 80, stats }) {
               Monthly Spend
             </div>
           </div>
+
+          {/* Bottom center — Action items */}
           <div style={{
-            position: 'absolute', bottom: 16, left: '50%',
+            position: 'absolute', bottom: 12, left: '50%',
             transform: 'translateX(-50%)', textAlign: 'center', pointerEvents: 'none',
           }}>
             <div style={{
-              fontSize: 14, fontWeight: 700,
-              color: healthScore >= 75 ? '#00e676' : healthScore >= 40 ? '#ffab00' : '#ff3d5a',
+              fontSize: 15, fontWeight: 700, color: statusColor,
               textTransform: 'uppercase', letterSpacing: 2,
-              textShadow: `0 0 15px ${healthScore >= 75 ? 'rgba(0,230,118,0.5)' : healthScore >= 40 ? 'rgba(255,171,0,0.5)' : 'rgba(255,61,90,0.5)'}`,
+              textShadow: `0 0 15px ${statusGlow}`,
+              marginBottom: 6,
             }}>
-              System Health: {healthScore}%
+              {statusLabel}
             </div>
+            {actionItems && totalActions > 0 && (
+              <div style={{ display: 'flex', gap: 16, justifyContent: 'center' }}>
+                {actionItems.openRequests > 0 && (
+                  <span style={{ fontSize: 11, color: '#a855f7', fontWeight: 600 }}>
+                    {actionItems.openRequests} request{actionItems.openRequests !== 1 ? 's' : ''}
+                  </span>
+                )}
+                {actionItems.lowStockItems > 0 && (
+                  <span style={{ fontSize: 11, color: '#ff3d5a', fontWeight: 600 }}>
+                    {actionItems.lowStockItems} low stock
+                  </span>
+                )}
+                {actionItems.pendingOrders > 0 && (
+                  <span style={{ fontSize: 11, color: '#ffab00', fontWeight: 600 }}>
+                    {actionItems.pendingOrders} order{actionItems.pendingOrders !== 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </>
       )}

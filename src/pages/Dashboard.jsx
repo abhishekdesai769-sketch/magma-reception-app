@@ -483,28 +483,34 @@ export default function Dashboard() {
     return { clientSpark, requestSpark, orderSpark };
   }, [clientData, supplyData, orderData]);
 
-  // ── System Health Score ─────────────────────────────────
-  const healthScore = useMemo(() => {
-    let score = 100;
-    // Deduct for low stock items
-    const lowCount = kpis.lowStock;
-    score -= Math.min(40, lowCount * 10);
-    // Deduct for old unresolved requests
-    const urgentUnresolved = supplyData.filter(i => {
+  // ── Open Action Items ────────────────────────────────────
+  const actionItems = useMemo(() => {
+    const openRequests = supplyData.filter(i => {
       const st = i.fields?.Status;
-      const urg = i.fields?.Urgency;
-      return st === 'New' && urg === 'Urgent';
+      return st && st !== 'Completed' && st !== 'Cancelled';
     }).length;
-    score -= Math.min(30, urgentUnresolved * 15);
-    // Deduct for overdue orders
-    const overdueOrders = orderData.filter(i => {
+
+    const lowStockItems = inventoryData.filter(i => {
+      const q = i.fields?.CurrentQuantity ?? 0;
+      const t = i.fields?.MinimumThreshold ?? 0;
+      return t > 0 && q <= t;
+    }).length;
+
+    const pendingOrders = orderData.filter(i => {
       const st = i.fields?.OrderStatus;
-      const exp = safeParseDate(i.fields?.ExpectedDelivery);
-      return st === 'Ordered' && exp && isBefore(exp, new Date());
+      return st && st !== 'Received' && st !== 'Cancelled' && st !== 'Delegated';
     }).length;
-    score -= Math.min(30, overdueOrders * 10);
-    return Math.max(0, Math.min(100, score));
-  }, [kpis, supplyData, orderData]);
+
+    const total = openRequests + lowStockItems + pendingOrders;
+
+    // Globe color: 0-3 = green, 4-8 = amber, 9+ = red
+    let globeScore;
+    if (total <= 3) globeScore = 90;
+    else if (total <= 8) globeScore = 55;
+    else globeScore = 20;
+
+    return { openRequests, lowStockItems, pendingOrders, total, globeScore };
+  }, [supplyData, inventoryData, orderData]);
 
   // ── Immigration Status Breakdown ────────────────────────
   const immigrationData = useMemo(() => {
@@ -765,11 +771,12 @@ export default function Dashboard() {
         <motion.div variants={fadeInUp} custom={7} style={{ marginBottom: 32 }}>
           <Suspense fallback={<div style={{ height: 320, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-dim)' }}><Loader2 size={24} style={{ animation: 'dspin 1s linear infinite' }} /></div>}>
             <OrbVisual
-              healthScore={healthScore}
+              healthScore={actionItems.globeScore}
               stats={{
                 clientsThisMonth,
                 monthlySpend: kpis.monthlySpend.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 }),
               }}
+              actionItems={actionItems}
             />
           </Suspense>
         </motion.div>
