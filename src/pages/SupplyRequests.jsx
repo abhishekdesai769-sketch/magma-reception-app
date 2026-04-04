@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   PlusCircle,
   Filter,
@@ -8,11 +8,13 @@ import {
   Loader2,
   RefreshCw,
   AlertCircle,
+  X,
+  Check,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import PageWrapper from '../components/Layout/PageWrapper';
 import { useSharePointList } from '../hooks/useSharePointList';
-import { updateSupplyRequest } from '../services/graphApi';
+import { createSupplyRequest } from '../services/graphApi';
 
 const columns = [
   { key: 'New', label: 'New', color: '#ff3d5a' },
@@ -23,6 +25,7 @@ const columns = [
 ];
 
 const departments = ['All', 'Reception', 'CELPIP', 'Administration', 'Kitchen', 'Settlement', 'Language', 'IT', 'Finance', 'HR', 'Facilities'];
+const deptChoices = departments.filter(d => d !== 'All');
 const urgencies = ['All', 'Urgent', 'Normal'];
 
 const urgencyColor = {
@@ -57,166 +60,87 @@ const stagger = {
   visible: { transition: { staggerChildren: 0.06 } },
 };
 
+// ─── Shared form styles ───
+const f = {
+  overlay: {
+    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+    background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(6px)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    zIndex: 1000, padding: 20,
+  },
+  modal: {
+    background: 'var(--bg-card)', border: '1px solid var(--glass-border)',
+    borderRadius: 16, padding: 32, width: '100%', maxWidth: 540,
+    maxHeight: '90vh', overflowY: 'auto', position: 'relative',
+  },
+  title: {
+    fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 24,
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+  },
+  closeBtn: {
+    background: 'none', border: 'none', color: 'var(--text-muted)',
+    cursor: 'pointer', padding: 4,
+  },
+  label: {
+    display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-muted)',
+    marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em',
+  },
+  input: {
+    width: '100%', padding: '12px 16px', borderRadius: 10,
+    background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)',
+    color: 'var(--text-primary)', fontSize: 14, minHeight: 48, outline: 'none',
+  },
+  textarea: {
+    width: '100%', padding: '12px 16px', borderRadius: 10,
+    background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)',
+    color: 'var(--text-primary)', fontSize: 14, minHeight: 90, outline: 'none',
+    resize: 'vertical',
+  },
+  group: { marginBottom: 20 },
+  chips: { display: 'flex', flexWrap: 'wrap', gap: 8 },
+  chip: (active, color = '#00d4ff') => ({
+    padding: '8px 16px', borderRadius: 8, fontSize: 13, fontWeight: 500,
+    cursor: 'pointer', border: 'none', transition: 'all 0.2s',
+    background: active ? color + '20' : 'rgba(255,255,255,0.04)',
+    color: active ? color : 'var(--text-muted)',
+    borderWidth: 1, borderStyle: 'solid',
+    borderColor: active ? color + '50' : 'var(--glass-border)',
+  }),
+  submitBtn: (loading, success) => ({
+    width: '100%', padding: 16, borderRadius: 10, border: 'none',
+    fontWeight: 700, fontSize: 16, cursor: loading ? 'not-allowed' : 'pointer',
+    minHeight: 52, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginTop: 8,
+    background: loading ? 'rgba(0,212,255,0.1)' : success ? 'rgba(0,230,118,0.2)' : 'linear-gradient(135deg, #00d4ff 0%, #0090b3 100%)',
+    color: loading ? '#00d4ff' : success ? '#00e676' : '#0a0a0f',
+  }),
+  error: { color: '#ff3d5a', fontSize: 13, textAlign: 'center', marginTop: 8 },
+};
+
 const s = {
-  header: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginBottom: 'var(--space-6)',
-    flexWrap: 'wrap',
-    gap: 'var(--space-4)',
-  },
-  newBtn: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    padding: 'var(--space-3) var(--space-5)',
-    borderRadius: 'var(--radius-md)',
-    background: 'linear-gradient(135deg, #00d4ff 0%, #0090b3 100%)',
-    color: '#0a0a0f',
-    fontWeight: 700,
-    fontSize: 'var(--text-sm)',
-    cursor: 'pointer',
-    minHeight: 48,
-    border: 'none',
-  },
-  filterBar: {
-    display: 'flex',
-    gap: 'var(--space-3)',
-    marginBottom: 'var(--space-6)',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-  },
-  filterIcon: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 4,
-    color: 'var(--text-muted)',
-    fontSize: 'var(--text-sm)',
-  },
-  select: {
-    padding: 'var(--space-2) var(--space-4)',
-    borderRadius: 'var(--radius-md)',
-    background: 'rgba(255,255,255,0.04)',
-    border: '1px solid var(--glass-border)',
-    color: 'var(--text-primary)',
-    fontSize: 'var(--text-sm)',
-    minHeight: 40,
-    cursor: 'pointer',
-    appearance: 'auto',
-  },
-  board: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(5, minmax(220px, 1fr))',
-    gap: 'var(--space-4)',
-    overflowX: 'auto',
-    paddingBottom: 'var(--space-4)',
-  },
-  column: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 'var(--space-3)',
-    minHeight: 300,
-  },
-  colHeader: (color) => ({
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 'var(--space-3) var(--space-4)',
-    borderRadius: 'var(--radius-md)',
-    background: color + '12',
-    borderLeft: `3px solid ${color}`,
-    marginBottom: 'var(--space-2)',
-  }),
-  colName: {
-    fontWeight: 600,
-    fontSize: 'var(--text-sm)',
-    color: 'var(--text-primary)',
-  },
-  colCount: (color) => ({
-    background: color + '25',
-    color,
-    padding: '2px 10px',
-    borderRadius: 'var(--radius-full)',
-    fontSize: 'var(--text-xs)',
-    fontWeight: 700,
-  }),
-  card: {
-    background: 'var(--glass-bg)',
-    backdropFilter: 'blur(var(--glass-blur))',
-    border: '1px solid var(--glass-border)',
-    borderRadius: 'var(--radius-md)',
-    padding: 'var(--space-4)',
-    cursor: 'pointer',
-  },
-  cardTitle: {
-    fontWeight: 600,
-    fontSize: 'var(--text-sm)',
-    marginBottom: 'var(--space-2)',
-    color: 'var(--text-primary)',
-  },
-  cardRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-    marginBottom: 'var(--space-1)',
-    fontSize: 'var(--text-xs)',
-    color: 'var(--text-muted)',
-  },
-  cardBadge: (color) => ({
-    display: 'inline-block',
-    padding: '1px 8px',
-    borderRadius: 'var(--radius-full)',
-    background: color + '20',
-    color,
-    fontSize: '10px',
-    fontWeight: 600,
-  }),
-  cardFooter: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 'var(--space-3)',
-  },
-  loadingWrap: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 'var(--space-12)',
-    gap: 'var(--space-4)',
-    color: 'var(--text-muted)',
-  },
-  errorWrap: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 'var(--space-12)',
-    gap: 'var(--space-4)',
-    color: '#ff3d5a',
-  },
-  retryBtn: {
-    padding: 'var(--space-3) var(--space-5)',
-    borderRadius: 'var(--radius-md)',
-    background: 'rgba(255,61,90,0.15)',
-    border: '1px solid rgba(255,61,90,0.3)',
-    color: '#ff3d5a',
-    fontWeight: 600,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 'var(--space-2)',
-  },
+  header: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 'var(--space-6)', flexWrap: 'wrap', gap: 'var(--space-4)' },
+  newBtn: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3) var(--space-5)', borderRadius: 'var(--radius-md)', background: 'linear-gradient(135deg, #00d4ff 0%, #0090b3 100%)', color: '#0a0a0f', fontWeight: 700, fontSize: 'var(--text-sm)', cursor: 'pointer', minHeight: 48, border: 'none' },
+  filterBar: { display: 'flex', gap: 'var(--space-3)', marginBottom: 'var(--space-6)', flexWrap: 'wrap', alignItems: 'center' },
+  filterIcon: { display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)', fontSize: 'var(--text-sm)' },
+  select: { padding: 'var(--space-2) var(--space-4)', borderRadius: 'var(--radius-md)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)', minHeight: 40, cursor: 'pointer', appearance: 'auto' },
+  board: { display: 'grid', gridTemplateColumns: 'repeat(5, minmax(220px, 1fr))', gap: 'var(--space-4)', overflowX: 'auto', paddingBottom: 'var(--space-4)' },
+  column: { display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', minHeight: 300 },
+  colHeader: (color) => ({ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'var(--space-3) var(--space-4)', borderRadius: 'var(--radius-md)', background: color + '12', borderLeft: `3px solid ${color}`, marginBottom: 'var(--space-2)' }),
+  colName: { fontWeight: 600, fontSize: 'var(--text-sm)', color: 'var(--text-primary)' },
+  colCount: (color) => ({ background: color + '25', color, padding: '2px 10px', borderRadius: 'var(--radius-full)', fontSize: 'var(--text-xs)', fontWeight: 700 }),
+  card: { background: 'var(--glass-bg)', backdropFilter: 'blur(var(--glass-blur))', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', cursor: 'pointer' },
+  cardTitle: { fontWeight: 600, fontSize: 'var(--text-sm)', marginBottom: 'var(--space-2)', color: 'var(--text-primary)' },
+  cardRow: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)', fontSize: 'var(--text-xs)', color: 'var(--text-muted)' },
+  cardBadge: (color) => ({ display: 'inline-block', padding: '1px 8px', borderRadius: 'var(--radius-full)', background: color + '20', color, fontSize: '10px', fontWeight: 600 }),
+  cardFooter: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--space-3)' },
+  loadingWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-12)', gap: 'var(--space-4)', color: 'var(--text-muted)' },
+  errorWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-12)', gap: 'var(--space-4)', color: '#ff3d5a' },
+  retryBtn: { padding: 'var(--space-3) var(--space-5)', borderRadius: 'var(--radius-md)', background: 'rgba(255,61,90,0.15)', border: '1px solid rgba(255,61,90,0.3)', color: '#ff3d5a', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' },
 };
 
 function formatDate(dateStr) {
   if (!dateStr) return '—';
-  try {
-    return format(new Date(dateStr), 'MMM d');
-  } catch {
-    return dateStr;
-  }
+  try { return format(new Date(dateStr), 'MMM d'); } catch { return dateStr; }
 }
 
 export default function SupplyRequests() {
@@ -224,7 +148,48 @@ export default function SupplyRequests() {
   const [urgencyFilter, setUrgencyFilter] = useState('All');
   const { data: rawData, loading, error, refresh } = useSharePointList('supplyRequests');
 
-  // Map SharePoint fields to UI shape
+  // ── Form state ──
+  const [showForm, setShowForm] = useState(false);
+  const [fTitle, setFTitle] = useState('');
+  const [fDept, setFDept] = useState('');
+  const [fItems, setFItems] = useState('');
+  const [fUrgency, setFUrgency] = useState('Normal');
+  const [fCompDate, setFCompDate] = useState('');
+  const [fNotes, setFNotes] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
+
+  const resetForm = () => {
+    setFTitle(''); setFDept(''); setFItems(''); setFUrgency('Normal');
+    setFCompDate(''); setFNotes('');
+  };
+
+  const handleSubmit = async () => {
+    if (!fTitle || !fDept || !fItems) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await createSupplyRequest({
+        Title: fTitle,
+        Department: fDept,
+        RequestedItems: fItems,
+        Urgency: fUrgency,
+        Status: 'New',
+        RequestedCompletionDate: fUrgency === 'Urgent' && fCompDate ? fCompDate : undefined,
+        ReceptionNotes: fNotes || undefined,
+      });
+      setSubmitSuccess(true);
+      resetForm();
+      refresh();
+      setTimeout(() => { setSubmitSuccess(false); setShowForm(false); }, 1200);
+    } catch (err) {
+      setSubmitError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const requests = rawData.map((item) => ({
     id: item.id,
     title: item.fields?.Title || 'Untitled',
@@ -259,12 +224,8 @@ export default function SupplyRequests() {
         <div style={s.errorWrap}>
           <AlertCircle size={32} />
           <span>Failed to load supply requests</span>
-          <span style={{ fontSize: 'var(--text-xs)', maxWidth: 400, textAlign: 'center', opacity: 0.7 }}>
-            {error.message}
-          </span>
-          <button style={s.retryBtn} onClick={refresh}>
-            <RefreshCw size={14} /> Retry
-          </button>
+          <span style={{ fontSize: 'var(--text-xs)', maxWidth: 400, textAlign: 'center', opacity: 0.7 }}>{error.message}</span>
+          <button style={s.retryBtn} onClick={refresh}><RefreshCw size={14} /> Retry</button>
         </div>
       </PageWrapper>
     );
@@ -279,6 +240,7 @@ export default function SupplyRequests() {
             style={s.newBtn}
             whileHover={{ scale: 1.04, boxShadow: '0 0 20px rgba(0,212,255,0.4)' }}
             whileTap={{ scale: 0.96 }}
+            onClick={() => setShowForm(true)}
           >
             <PlusCircle size={18} />
             New Request
@@ -287,30 +249,12 @@ export default function SupplyRequests() {
 
         {/* Filter Bar */}
         <motion.div style={s.filterBar} variants={fadeInUp} custom={1}>
-          <span style={s.filterIcon}>
-            <Filter size={14} /> Filters
-          </span>
-          <select
-            style={s.select}
-            value={deptFilter}
-            onChange={(e) => setDeptFilter(e.target.value)}
-          >
-            {departments.map((d) => (
-              <option key={d} value={d} style={{ background: '#161b22' }}>
-                {d === 'All' ? 'All Departments' : d}
-              </option>
-            ))}
+          <span style={s.filterIcon}><Filter size={14} /> Filters</span>
+          <select style={s.select} value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
+            {departments.map((d) => <option key={d} value={d} style={{ background: '#161b22' }}>{d === 'All' ? 'All Departments' : d}</option>)}
           </select>
-          <select
-            style={s.select}
-            value={urgencyFilter}
-            onChange={(e) => setUrgencyFilter(e.target.value)}
-          >
-            {urgencies.map((u) => (
-              <option key={u} value={u} style={{ background: '#161b22' }}>
-                {u === 'All' ? 'All Urgencies' : u}
-              </option>
-            ))}
+          <select style={s.select} value={urgencyFilter} onChange={(e) => setUrgencyFilter(e.target.value)}>
+            {urgencies.map((u) => <option key={u} value={u} style={{ background: '#161b22' }}>{u === 'All' ? 'All Urgencies' : u}</option>)}
           </select>
         </motion.div>
 
@@ -319,76 +263,94 @@ export default function SupplyRequests() {
           {columns.map((col, ci) => {
             const cards = filtered.filter((r) => r.status === col.key);
             return (
-              <motion.div
-                key={col.key}
-                style={s.column}
-                variants={fadeInUp}
-                custom={2 + ci}
-              >
+              <motion.div key={col.key} style={s.column} variants={fadeInUp} custom={2 + ci}>
                 <div style={s.colHeader(col.color)}>
                   <span style={s.colName}>{col.label}</span>
                   <span style={s.colCount(col.color)}>{cards.length}</span>
                 </div>
-
                 {cards.map((card, i) => (
-                  <motion.div
-                    key={card.id}
-                    style={s.card}
-                    variants={fadeInUp}
-                    custom={7 + i}
-                    whileHover={{
-                      y: -4,
-                      boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
-                    }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                  >
+                  <motion.div key={card.id} style={s.card} variants={fadeInUp} custom={7 + i}
+                    whileHover={{ y: -4, boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 25 }}>
                     <div style={s.cardTitle}>{card.title}</div>
-                    <div style={s.cardRow}>
-                      <User size={12} />
-                      {card.requester}
-                    </div>
+                    <div style={s.cardRow}><User size={12} />{card.requester}</div>
                     <div style={s.cardFooter}>
-                      <span
-                        style={s.cardBadge(
-                          deptColor[card.department] || '#8b949e'
-                        )}
-                      >
-                        {card.department}
-                      </span>
-                      <span
-                        style={s.cardBadge(
-                          urgencyColor[card.urgency] || '#8b949e'
-                        )}
-                      >
-                        {card.urgency}
-                      </span>
+                      <span style={s.cardBadge(deptColor[card.department] || '#8b949e')}>{card.department}</span>
+                      <span style={s.cardBadge(urgencyColor[card.urgency] || '#8b949e')}>{card.urgency}</span>
                     </div>
-                    <div
-                      style={{ ...s.cardRow, marginTop: 8, marginBottom: 0 }}
-                    >
-                      <Calendar size={11} />
-                      {card.date}
-                    </div>
+                    <div style={{ ...s.cardRow, marginTop: 8, marginBottom: 0 }}><Calendar size={11} />{card.date}</div>
                   </motion.div>
                 ))}
-
-                {cards.length === 0 && (
-                  <div
-                    style={{
-                      textAlign: 'center',
-                      padding: 'var(--space-6)',
-                      color: 'var(--text-dim)',
-                      fontSize: 'var(--text-xs)',
-                    }}
-                  >
-                    No items
-                  </div>
-                )}
+                {cards.length === 0 && <div style={{ textAlign: 'center', padding: 'var(--space-6)', color: 'var(--text-dim)', fontSize: 'var(--text-xs)' }}>No items</div>}
               </motion.div>
             );
           })}
         </motion.div>
       </motion.div>
+
+      {/* ── New Request Modal ── */}
+      <AnimatePresence>
+        {showForm && (
+          <motion.div style={f.overlay} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={(e) => e.target === e.currentTarget && setShowForm(false)}>
+            <motion.div style={f.modal} initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}>
+              <div style={f.title}>
+                New Supply Request
+                <button style={f.closeBtn} onClick={() => setShowForm(false)}><X size={20} /></button>
+              </div>
+
+              <div style={f.group}>
+                <label style={f.label}>Request Title *</label>
+                <input style={f.input} placeholder="e.g. Paper 8x11 Restock" value={fTitle} onChange={(e) => setFTitle(e.target.value)} />
+              </div>
+
+              <div style={f.group}>
+                <label style={f.label}>Department *</label>
+                <div style={f.chips}>
+                  {deptChoices.map(d => (
+                    <button key={d} style={f.chip(fDept === d, deptColor[d])} onClick={() => setFDept(d)}>{d}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={f.group}>
+                <label style={f.label}>Requested Items *</label>
+                <textarea style={f.textarea} placeholder="e.g. Paper 8x11 — 2 packs&#10;Pens — 1 box" value={fItems} onChange={(e) => setFItems(e.target.value)} />
+              </div>
+
+              <div style={f.group}>
+                <label style={f.label}>Urgency</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {['Normal', 'Urgent'].map(u => (
+                    <button key={u} style={f.chip(fUrgency === u, urgencyColor[u])} onClick={() => setFUrgency(u)}>{u}</button>
+                  ))}
+                </div>
+              </div>
+
+              {fUrgency === 'Urgent' && (
+                <div style={f.group}>
+                  <label style={f.label}>Needed By Date</label>
+                  <input style={f.input} type="date" value={fCompDate} onChange={(e) => setFCompDate(e.target.value)} />
+                </div>
+              )}
+
+              <div style={f.group}>
+                <label style={f.label}>Notes (optional)</label>
+                <textarea style={{ ...f.textarea, minHeight: 60 }} placeholder="Additional details..." value={fNotes} onChange={(e) => setFNotes(e.target.value)} />
+              </div>
+
+              {submitError && <div style={f.error}>{submitError}</div>}
+
+              <button style={f.submitBtn(submitting, submitSuccess)} onClick={handleSubmit} disabled={submitting || !fTitle || !fDept || !fItems}>
+                {submitting ? <><Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} /> Submitting...</>
+                  : submitSuccess ? <><Check size={18} /> Created!</>
+                  : 'Submit Request'}
+              </button>
+              <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </PageWrapper>
   );
 }
