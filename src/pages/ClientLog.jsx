@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronDown,
@@ -10,8 +10,10 @@ import {
   User,
   AlertCircle,
   RefreshCw,
+  Calendar,
+  BarChart3,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, subDays, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import PageWrapper from '../components/Layout/PageWrapper';
 import { useSharePointList } from '../hooks/useSharePointList';
 import { createClientLogEntry } from '../services/graphApi';
@@ -283,6 +285,164 @@ function formatTime(dateStr) {
   }
 }
 
+// ─── Filter presets ───
+const PRESETS = [
+  { key: 'all', label: 'All time' },
+  { key: 'today', label: 'Today' },
+  { key: 'week', label: 'This Week' },
+  { key: '7d', label: 'Last 7 days' },
+  { key: '30d', label: 'Last 30 days' },
+  { key: '6m', label: 'Last 6 months' },
+  { key: '1y', label: 'Last year' },
+];
+
+function getDateRange(preset, monthYear) {
+  const now = new Date();
+  switch (preset) {
+    case 'today':
+      return { from: startOfDay(now), to: endOfDay(now), label: 'Today' };
+    case 'week':
+      return { from: startOfWeek(now, { weekStartsOn: 1 }), to: endOfWeek(now, { weekStartsOn: 1 }), label: 'This Week' };
+    case '7d':
+      return { from: startOfDay(subDays(now, 7)), to: endOfDay(now), label: 'Last 7 days' };
+    case '30d':
+      return { from: startOfDay(subDays(now, 30)), to: endOfDay(now), label: 'Last 30 days' };
+    case '6m':
+      return { from: startOfDay(subMonths(now, 6)), to: endOfDay(now), label: 'Last 6 months' };
+    case '1y':
+      return { from: startOfDay(subMonths(now, 12)), to: endOfDay(now), label: 'Last year' };
+    case 'month': {
+      if (!monthYear) return null;
+      const [y, m] = monthYear.split('-').map(Number);
+      const d = new Date(y, m - 1, 1);
+      return { from: startOfMonth(d), to: endOfMonth(d), label: format(d, 'MMMM yyyy') };
+    }
+    default:
+      return null; // 'all' = no filter
+  }
+}
+
+// ─── Filter + stats styles ───
+const f = {
+  filterCard: {
+    background: 'var(--glass-bg)',
+    backdropFilter: 'blur(var(--glass-blur))',
+    border: '1px solid var(--glass-border)',
+    borderRadius: 'var(--radius-lg)',
+    padding: 'var(--space-5)',
+    marginBottom: 'var(--space-5)',
+  },
+  filterRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 'var(--space-2)',
+    alignItems: 'center',
+  },
+  filterLabel: {
+    fontSize: 'var(--text-xs)',
+    fontWeight: 600,
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginRight: 8,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+  },
+  chip: (active) => ({
+    padding: '7px 14px',
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 600,
+    cursor: 'pointer',
+    border: '1px solid',
+    borderColor: active ? '#00d4ff' : 'var(--glass-border)',
+    background: active ? 'rgba(0,212,255,0.15)' : 'transparent',
+    color: active ? '#00d4ff' : 'var(--text-muted)',
+    transition: 'all 0.15s',
+  }),
+  monthInput: {
+    padding: '7px 14px',
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 600,
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid var(--glass-border)',
+    color: 'var(--text-primary)',
+    outline: 'none',
+    colorScheme: 'dark',
+    minWidth: 140,
+    cursor: 'pointer',
+  },
+  statsCard: {
+    background: 'linear-gradient(135deg, rgba(0,212,255,0.08) 0%, rgba(168,85,247,0.06) 100%)',
+    border: '1px solid rgba(0,212,255,0.2)',
+    borderRadius: 'var(--radius-lg)',
+    padding: 'var(--space-6)',
+    marginBottom: 'var(--space-5)',
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 2fr',
+    gap: 'var(--space-6)',
+    alignItems: 'start',
+  },
+  statsCount: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 4,
+    borderRight: '1px solid rgba(255,255,255,0.08)',
+    paddingRight: 'var(--space-6)',
+  },
+  statsCountNum: {
+    fontSize: '3rem',
+    fontWeight: 800,
+    color: '#00d4ff',
+    lineHeight: 1,
+  },
+  statsCountLabel: {
+    fontSize: 'var(--text-sm)',
+    color: 'var(--text-muted)',
+    fontWeight: 500,
+  },
+  statsCountPeriod: {
+    fontSize: 'var(--text-xs)',
+    color: 'var(--text-dim)',
+    marginTop: 4,
+  },
+  breakdownGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: 'var(--space-4)',
+  },
+  breakdownBlock: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  breakdownTitle: {
+    fontSize: 11,
+    fontWeight: 700,
+    color: 'var(--text-dim)',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+  },
+  breakdownRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    fontSize: 12,
+  },
+  breakdownDot: (color) => ({ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }),
+  breakdownLabel: { color: 'var(--text-primary)', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+  breakdownCount: { color: 'var(--text-muted)', fontWeight: 600 },
+  breakdownEmpty: { fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic' },
+};
+
+const reasonColors = ['#00d4ff', '#a855f7', '#ff006e', '#00e676', '#ffab00', '#26a69a'];
+const langColors = { English: '#00d4ff', French: '#ff006e' };
+
 export default function ClientLog() {
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -299,16 +459,53 @@ export default function ClientLog() {
   const [success, setSuccess] = useState(false);
   const [submitError, setSubmitError] = useState(null);
 
+  // ── Filter state ──
+  const [preset, setPreset] = useState('all');
+  const [monthYear, setMonthYear] = useState(''); // 'YYYY-MM' format
+
   const { data: rawData, loading, error, refresh } = useSharePointList('clientLog');
 
-  // Map SharePoint fields to UI shape
-  const entries = rawData.map((item) => ({
+  // Map SharePoint fields to UI shape (keep rawDate for filtering)
+  const entries = useMemo(() => rawData.map((item) => ({
     id: item.id,
     name: item.fields?.Title || `${item.fields?.FirstName || ''} ${item.fields?.LastName || ''}`.trim() || 'Unknown',
     reason: item.fields?.ReasonForVisit || '—',
     status: item.fields?.StatusInCanada || '—',
+    language: item.fields?.PreferredLanguage || null,
     time: formatTime(item.fields?.DateOfInteraction),
-  }));
+    rawDate: item.fields?.DateOfInteraction || item.createdDateTime || null,
+  })), [rawData]);
+
+  // ── Apply filter ──
+  const activePreset = monthYear ? 'month' : preset;
+  const range = getDateRange(activePreset, monthYear);
+  const filteredEntries = useMemo(() => {
+    if (!range) return entries;
+    return entries.filter((e) => {
+      if (!e.rawDate) return false;
+      const d = new Date(e.rawDate);
+      return d >= range.from && d <= range.to;
+    });
+  }, [entries, range?.from?.getTime?.(), range?.to?.getTime?.()]);
+
+  // ── Compute stats ──
+  const stats = useMemo(() => {
+    const reasonCounts = {};
+    const statusCounts = {};
+    const langCounts = { English: 0, French: 0 };
+    filteredEntries.forEach((e) => {
+      if (e.reason && e.reason !== '—') reasonCounts[e.reason] = (reasonCounts[e.reason] || 0) + 1;
+      if (e.status && e.status !== '—') statusCounts[e.status] = (statusCounts[e.status] || 0) + 1;
+      if (e.language === 'English' || e.language === 'French') langCounts[e.language]++;
+    });
+    const topReasons = Object.entries(reasonCounts).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const statusBreakdown = statusOptions
+      .map((opt) => ({ label: opt.label, color: opt.color, count: statusCounts[opt.label] || 0 }))
+      .filter((s) => s.count > 0);
+    return { topReasons, statusBreakdown, langCounts };
+  }, [filteredEntries]);
+
+  const activeFilterLabel = range?.label || 'All time';
 
   const handleSubmit = async () => {
     if (!firstName || !lastName) return;
@@ -355,7 +552,7 @@ export default function ClientLog() {
         {/* Header with count badge */}
         <motion.div style={s.header} variants={fadeInUp} custom={0}>
           <span style={s.badge}>
-            {loading ? '...' : entries.length} clients logged
+            {loading ? '...' : entries.length} total clients logged
           </span>
         </motion.div>
 
@@ -563,16 +760,119 @@ export default function ClientLog() {
           </motion.button>
         </motion.div>
 
-        {/* Recent Entries */}
-        <motion.div variants={fadeInUp} custom={2}>
+        {/* ── Filter Controls ── */}
+        <motion.div style={f.filterCard} variants={fadeInUp} custom={2}>
+          <div style={f.filterRow}>
+            <span style={f.filterLabel}>
+              <Calendar size={12} /> Filter:
+            </span>
+            {PRESETS.map((p) => (
+              <button
+                key={p.key}
+                type="button"
+                style={f.chip(preset === p.key && !monthYear)}
+                onClick={() => { setPreset(p.key); setMonthYear(''); }}
+              >
+                {p.label}
+              </button>
+            ))}
+            <input
+              type="month"
+              style={f.monthInput}
+              value={monthYear}
+              onChange={(e) => { setMonthYear(e.target.value); if (e.target.value) setPreset('month'); }}
+              placeholder="Pick month"
+            />
+          </div>
+        </motion.div>
+
+        {/* ── Stats Card ── */}
+        <motion.div style={f.statsCard} variants={fadeInUp} custom={3}>
+          <div style={f.statsGrid}>
+            {/* Count */}
+            <div style={f.statsCount}>
+              <div style={f.statsCountNum}>{filteredEntries.length}</div>
+              <div style={f.statsCountLabel}>
+                {filteredEntries.length === 1 ? 'client' : 'clients'} served
+              </div>
+              <div style={f.statsCountPeriod}>{activeFilterLabel}</div>
+            </div>
+
+            {/* Breakdowns */}
+            <div style={f.breakdownGrid}>
+              {/* Top Reasons */}
+              <div style={f.breakdownBlock}>
+                <div style={f.breakdownTitle}>Top Reasons</div>
+                {stats.topReasons.length === 0 ? (
+                  <div style={f.breakdownEmpty}>No data</div>
+                ) : (
+                  stats.topReasons.map(([reason, count], i) => (
+                    <div key={reason} style={f.breakdownRow}>
+                      <span style={f.breakdownDot(reasonColors[i % reasonColors.length])} />
+                      <span style={f.breakdownLabel}>{reason}</span>
+                      <span style={f.breakdownCount}>{count}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Status Split */}
+              <div style={f.breakdownBlock}>
+                <div style={f.breakdownTitle}>Immigration Status</div>
+                {stats.statusBreakdown.length === 0 ? (
+                  <div style={f.breakdownEmpty}>No data</div>
+                ) : (
+                  stats.statusBreakdown.slice(0, 4).map((s) => (
+                    <div key={s.label} style={f.breakdownRow}>
+                      <span style={f.breakdownDot(s.color)} />
+                      <span style={f.breakdownLabel}>{s.label}</span>
+                      <span style={f.breakdownCount}>{s.count}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Language Split */}
+              <div style={f.breakdownBlock}>
+                <div style={f.breakdownTitle}>Language</div>
+                {stats.langCounts.English === 0 && stats.langCounts.French === 0 ? (
+                  <div style={f.breakdownEmpty}>No data</div>
+                ) : (
+                  <>
+                    <div style={f.breakdownRow}>
+                      <span style={f.breakdownDot(langColors.English)} />
+                      <span style={f.breakdownLabel}>English</span>
+                      <span style={f.breakdownCount}>{stats.langCounts.English}</span>
+                    </div>
+                    <div style={f.breakdownRow}>
+                      <span style={f.breakdownDot(langColors.French)} />
+                      <span style={f.breakdownLabel}>French</span>
+                      <span style={f.breakdownCount}>{stats.langCounts.French}</span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Entries heading */}
+        <motion.div variants={fadeInUp} custom={4}>
           <h2
             style={{
               fontSize: 'var(--text-lg)',
               fontWeight: 600,
               marginBottom: 'var(--space-4)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
             }}
           >
-            Recent Entries
+            <BarChart3 size={18} style={{ color: '#00d4ff' }} />
+            Entries — {activeFilterLabel}
+            <span style={{ fontSize: 13, color: 'var(--text-dim)', fontWeight: 400, marginLeft: 6 }}>
+              ({filteredEntries.length})
+            </span>
           </h2>
         </motion.div>
 
@@ -590,12 +890,14 @@ export default function ClientLog() {
           </div>
         ) : (
           <motion.div style={s.entriesCard} variants={stagger}>
-            {entries.length === 0 && (
+            {filteredEntries.length === 0 && (
               <div style={{ textAlign: 'center', padding: 'var(--space-6)', color: 'var(--text-dim)' }}>
-                No entries yet. Log your first client visit above.
+                {entries.length === 0
+                  ? 'No entries yet. Log your first client visit above.'
+                  : `No entries found for ${activeFilterLabel.toLowerCase()}.`}
               </div>
             )}
-            {entries.slice(0, 20).map((entry, i) => (
+            {filteredEntries.slice(0, 50).map((entry, i) => (
               <motion.div
                 key={entry.id}
                 style={s.entryItem}
