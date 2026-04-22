@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ChevronDown,
@@ -12,13 +12,20 @@ import {
   RefreshCw,
   Calendar,
   BarChart3,
+  X,
 } from 'lucide-react';
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, subDays, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 import PageWrapper from '../components/Layout/PageWrapper';
 import { useSharePointList } from '../hooks/useSharePointList';
-import { createClientLogEntry } from '../services/graphApi';
+import {
+  createClientLogEntry,
+  getClientLogReasonChoices,
+  addClientLogReasonChoice,
+  getClientLogLanguageChoices,
+  addClientLogLanguageChoice,
+} from '../services/graphApi';
 
-const reasonOptions = [
+const FALLBACK_REASONS = [
   'Settlement Services',
   'Language Assessment',
   'Information Request',
@@ -29,6 +36,8 @@ const reasonOptions = [
   'Referral',
   'Other',
 ];
+
+const FALLBACK_LANGUAGES = ['English', 'French'];
 
 const statusOptions = [
   { label: 'PR', color: '#00d4ff' },
@@ -463,6 +472,71 @@ export default function ClientLog() {
   const [preset, setPreset] = useState('all');
   const [monthYear, setMonthYear] = useState(''); // 'YYYY-MM' format
 
+  // ── Dynamic reason + language lists ──
+  const [reasons, setReasons] = useState(FALLBACK_REASONS);
+  const [languages, setLanguages] = useState(FALLBACK_LANGUAGES);
+  const [showAddReason, setShowAddReason] = useState(false);
+  const [newReasonName, setNewReasonName] = useState('');
+  const [addingReason, setAddingReason] = useState(false);
+  const [addReasonError, setAddReasonError] = useState(null);
+  const [showAddLanguage, setShowAddLanguage] = useState(false);
+  const [newLanguageName, setNewLanguageName] = useState('');
+  const [addingLanguage, setAddingLanguage] = useState(false);
+  const [addLanguageError, setAddLanguageError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await getClientLogReasonChoices();
+        if (!cancelled && r.length > 0) setReasons(r);
+      } catch (err) { console.warn('Could not load reasons:', err.message); }
+    })();
+    (async () => {
+      try {
+        const l = await getClientLogLanguageChoices();
+        if (!cancelled && l.length > 0) setLanguages(l);
+      } catch (err) { console.warn('Could not load languages:', err.message); }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleAddNewReason = async () => {
+    const name = newReasonName.trim();
+    if (!name) { setAddReasonError('Reason name cannot be empty'); return; }
+    if (reasons.some((r) => r.toLowerCase() === name.toLowerCase())) { setAddReasonError('That reason already exists'); return; }
+    setAddingReason(true); setAddReasonError(null);
+    try {
+      const updated = await addClientLogReasonChoice(name);
+      setReasons(updated);
+      setReason(name);
+      setShowAddReason(false);
+      setNewReasonName('');
+    } catch (err) {
+      setAddReasonError(err.message || 'Failed to add reason');
+    } finally {
+      setAddingReason(false);
+    }
+  };
+
+  const handleAddNewLanguage = async () => {
+    const name = newLanguageName.trim();
+    if (!name) { setAddLanguageError('Language name cannot be empty'); return; }
+    if (languages.some((l) => l.toLowerCase() === name.toLowerCase())) { setAddLanguageError('That language already exists'); return; }
+    setAddingLanguage(true); setAddLanguageError(null);
+    try {
+      const updated = await addClientLogLanguageChoice(name);
+      setLanguages(updated);
+      setLanguage(name);
+      setShowAddLanguage(false);
+      setNewLanguageName('');
+    } catch (err) {
+      setAddLanguageError(err.message || 'Failed to add language');
+    } finally {
+      setAddingLanguage(false);
+    }
+  };
+
   const { data: rawData, loading, error, refresh } = useSharePointList('clientLog');
 
   // Map SharePoint fields to UI shape (keep rawDate for filtering)
@@ -582,23 +656,49 @@ export default function ClientLog() {
 
           {/* Reason for Visit */}
           <p style={s.sectionLabel}>Reason for Visit</p>
-          <div style={s.optionGrid}>
-            {reasonOptions.map((opt) => (
-              <motion.button
-                key={opt}
-                style={s.optionBtn(reason === opt)}
-                onClick={() => setReason(opt)}
-                whileTap={{ scale: 0.95 }}
-                animate={
-                  reason === opt
-                    ? { boxShadow: '0 0 12px rgba(0,212,255,0.3)' }
-                    : { boxShadow: 'none' }
-                }
-              >
-                {opt}
-              </motion.button>
-            ))}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', flexWrap: 'wrap', marginBottom: 'var(--space-6)' }}>
+            <select
+              style={{ ...s.input, flex: 1, minWidth: 200 }}
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            >
+              <option value="">Choose a reason...</option>
+              {reasons.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+            {!showAddReason && (
+              <button type="button"
+                style={{ padding: '0 14px', borderRadius: 'var(--radius-md)', border: '1px dashed #00d4ff80', background: 'transparent', color: '#00d4ff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', minHeight: 48 }}
+                onClick={() => { setShowAddReason(true); setAddReasonError(null); setNewReasonName(''); }}>
+                <Plus size={12} /> New
+              </button>
+            )}
           </div>
+          {showAddReason && (
+            <div style={{ marginBottom: 'var(--space-4)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                style={{ ...s.input, flex: 1, minWidth: 200 }}
+                placeholder="New reason name..."
+                value={newReasonName}
+                onChange={(e) => setNewReasonName(e.target.value)}
+                autoFocus
+                disabled={addingReason}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewReason(); } }}
+              />
+              <button type="button"
+                style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#00d4ff', color: '#061218', fontWeight: 700, fontSize: 12, cursor: addingReason ? 'not-allowed' : 'pointer', minHeight: 40 }}
+                onClick={handleAddNewReason} disabled={addingReason}>
+                {addingReason ? <Loader2 size={12} style={{ animation: 'clientlog-spin 1s linear infinite' }} /> : <Check size={12} />}
+              </button>
+              <button type="button"
+                style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--glass-border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', minHeight: 40 }}
+                onClick={() => { setShowAddReason(false); setNewReasonName(''); setAddReasonError(null); }} disabled={addingReason}>
+                <X size={12} />
+              </button>
+            </div>
+          )}
+          {addReasonError && showAddReason && (
+            <div style={{ color: '#ff3d5a', fontSize: 12, marginTop: -12, marginBottom: 'var(--space-4)' }}>{addReasonError}</div>
+          )}
 
           {/* Status in Canada */}
           <p style={s.sectionLabel}>Status in Canada</p>
@@ -622,18 +722,48 @@ export default function ClientLog() {
 
           {/* Preferred Language */}
           <p style={s.sectionLabel}>Preferred Language</p>
-          <div style={s.langToggle}>
-            {['English', 'French'].map((lang) => (
-              <motion.button
-                key={lang}
-                style={s.langBtn(language === lang)}
-                onClick={() => setLanguage(lang)}
-                whileTap={{ scale: 0.97 }}
-              >
-                {lang}
-              </motion.button>
-            ))}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'stretch', flexWrap: 'wrap', marginBottom: 'var(--space-6)' }}>
+            <select
+              style={{ ...s.input, flex: 1, minWidth: 200 }}
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+            >
+              {languages.map((lang) => <option key={lang} value={lang}>{lang}</option>)}
+            </select>
+            {!showAddLanguage && (
+              <button type="button"
+                style={{ padding: '0 14px', borderRadius: 'var(--radius-md)', border: '1px dashed #00d4ff80', background: 'transparent', color: '#00d4ff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', minHeight: 48 }}
+                onClick={() => { setShowAddLanguage(true); setAddLanguageError(null); setNewLanguageName(''); }}>
+                <Plus size={12} /> New
+              </button>
+            )}
           </div>
+          {showAddLanguage && (
+            <div style={{ marginBottom: 'var(--space-4)', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                style={{ ...s.input, flex: 1, minWidth: 200 }}
+                placeholder="New language name..."
+                value={newLanguageName}
+                onChange={(e) => setNewLanguageName(e.target.value)}
+                autoFocus
+                disabled={addingLanguage}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewLanguage(); } }}
+              />
+              <button type="button"
+                style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#00d4ff', color: '#061218', fontWeight: 700, fontSize: 12, cursor: addingLanguage ? 'not-allowed' : 'pointer', minHeight: 40 }}
+                onClick={handleAddNewLanguage} disabled={addingLanguage}>
+                {addingLanguage ? <Loader2 size={12} style={{ animation: 'clientlog-spin 1s linear infinite' }} /> : <Check size={12} />}
+              </button>
+              <button type="button"
+                style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--glass-border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', minHeight: 40 }}
+                onClick={() => { setShowAddLanguage(false); setNewLanguageName(''); setAddLanguageError(null); }} disabled={addingLanguage}>
+                <X size={12} />
+              </button>
+            </div>
+          )}
+          {addLanguageError && showAddLanguage && (
+            <div style={{ color: '#ff3d5a', fontSize: 12, marginTop: -12, marginBottom: 'var(--space-4)' }}>{addLanguageError}</div>
+          )}
 
           {/* Family Members */}
           <p style={s.sectionLabel}>Number of Family Members</p>

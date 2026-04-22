@@ -188,6 +188,28 @@ export async function addInventoryCategoryChoice(newCategory) {
   return addChoiceToColumn(LIST_NAMES.inventory, 'Category', newCategory);
 }
 
+// --- Client Log Reason for Visit ---
+
+export async function getClientLogReasonChoices() {
+  const { column } = await getChoiceColumn(LIST_NAMES.clientLog, 'ReasonForVisit');
+  return column.choice?.choices || [];
+}
+
+export async function addClientLogReasonChoice(newReason) {
+  return addChoiceToColumn(LIST_NAMES.clientLog, 'ReasonForVisit', newReason);
+}
+
+// --- Client Log Preferred Language ---
+
+export async function getClientLogLanguageChoices() {
+  const { column } = await getChoiceColumn(LIST_NAMES.clientLog, 'PreferredLanguage');
+  return column.choice?.choices || [];
+}
+
+export async function addClientLogLanguageChoice(newLanguage) {
+  return addChoiceToColumn(LIST_NAMES.clientLog, 'PreferredLanguage', newLanguage);
+}
+
 // --- Vendor choices (synced across Inventory.PreferredVendor + PurchaseOrders.Vendor) ---
 
 export async function getVendorChoices() {
