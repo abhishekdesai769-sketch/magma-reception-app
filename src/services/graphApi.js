@@ -148,43 +148,75 @@ export async function deleteInventoryItem(id) {
   });
 }
 
-// --- Inventory Category column management ---
+// --- Generic choice-column management ---
 
-async function getCategoryColumn() {
+async function getChoiceColumn(listName, columnName) {
   const siteId = await getSiteId();
-  const listId = await getListId(LIST_NAMES.inventory);
-  // Fetch all columns and find Category
+  const listId = await getListId(listName);
   const data = await graphFetch(`/sites/${siteId}/lists/${listId}/columns`);
   const col = (data.value || []).find(
-    (c) => c.name === 'Category' || c.displayName === 'Category'
+    (c) => c.name === columnName || c.displayName === columnName
   );
-  if (!col) throw new Error('Category column not found in Reception Inventory list');
+  if (!col) throw new Error(`Column "${columnName}" not found in "${listName}" list`);
   return { siteId, listId, column: col };
 }
 
+async function addChoiceToColumn(listName, columnName, newChoice) {
+  const { siteId, listId, column } = await getChoiceColumn(listName, columnName);
+  const existing = column.choice?.choices || [];
+  if (existing.some((c) => c.toLowerCase() === newChoice.toLowerCase())) {
+    return existing;
+  }
+  const updated = [...existing, newChoice];
+  await graphFetch(`/sites/${siteId}/lists/${listId}/columns/${column.id}`, {
+    method: 'PATCH',
+    body: {
+      choice: { ...column.choice, choices: updated },
+    },
+  });
+  return updated;
+}
+
+// --- Inventory Category ---
+
 export async function getInventoryCategoryChoices() {
-  const { column } = await getCategoryColumn();
+  const { column } = await getChoiceColumn(LIST_NAMES.inventory, 'Category');
   return column.choice?.choices || [];
 }
 
 export async function addInventoryCategoryChoice(newCategory) {
-  const { siteId, listId, column } = await getCategoryColumn();
-  const existing = column.choice?.choices || [];
-  // De-dupe case-insensitively
-  if (existing.some((c) => c.toLowerCase() === newCategory.toLowerCase())) {
-    return existing; // Already exists — return current list
+  return addChoiceToColumn(LIST_NAMES.inventory, 'Category', newCategory);
+}
+
+// --- Vendor choices (synced across Inventory.PreferredVendor + PurchaseOrders.Vendor) ---
+
+export async function getVendorChoices() {
+  // Pull union of both columns so all known vendors appear
+  const [invCol, poCol] = await Promise.all([
+    getChoiceColumn(LIST_NAMES.inventory, 'PreferredVendor').catch(() => null),
+    getChoiceColumn(LIST_NAMES.purchaseOrders, 'Vendor').catch(() => null),
+  ]);
+  const set = new Set();
+  (invCol?.column?.choice?.choices || []).forEach((c) => set.add(c));
+  (poCol?.column?.choice?.choices || []).forEach((c) => set.add(c));
+  return Array.from(set);
+}
+
+export async function addVendorChoice(newVendor) {
+  // Add to both columns so the vendor is available everywhere
+  const [invResult, poResult] = await Promise.allSettled([
+    addChoiceToColumn(LIST_NAMES.inventory, 'PreferredVendor', newVendor),
+    addChoiceToColumn(LIST_NAMES.purchaseOrders, 'Vendor', newVendor),
+  ]);
+  // Return the union of whichever succeeded
+  const set = new Set();
+  if (invResult.status === 'fulfilled') invResult.value.forEach((c) => set.add(c));
+  if (poResult.status === 'fulfilled') poResult.value.forEach((c) => set.add(c));
+  // If both failed, rethrow the first error
+  if (invResult.status === 'rejected' && poResult.status === 'rejected') {
+    throw invResult.reason;
   }
-  const updated = [...existing, newCategory];
-  await graphFetch(`/sites/${siteId}/lists/${listId}/columns/${column.id}`, {
-    method: 'PATCH',
-    body: {
-      choice: {
-        ...column.choice,
-        choices: updated,
-      },
-    },
-  });
-  return updated;
+  return Array.from(set);
 }
 
 // --- Client Log ---

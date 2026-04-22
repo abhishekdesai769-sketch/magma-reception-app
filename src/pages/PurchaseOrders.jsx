@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   PlusCircle,
@@ -17,7 +17,7 @@ import {
 import { format, startOfDay, endOfDay, subDays, subMonths, startOfYear, endOfYear, startOfMonth } from 'date-fns';
 import PageWrapper from '../components/Layout/PageWrapper';
 import { useSharePointList } from '../hooks/useSharePointList';
-import { createPurchaseOrder } from '../services/graphApi';
+import { createPurchaseOrder, getVendorChoices, addVendorChoice } from '../services/graphApi';
 
 const statusColor = {
   Ordered: '#00d4ff',
@@ -27,7 +27,7 @@ const statusColor = {
   Cancelled: '#ff3d5a',
 };
 
-const vendorChoices = ['Amazon', 'Instacart', 'MCS', 'Denis', 'Walmart', 'Superstore', 'Dollarama', 'Ikea', 'Other'];
+const FALLBACK_VENDORS = ['Amazon', 'Instacart', 'MCS', 'Denis', 'Walmart', 'Superstore', 'Dollarama', 'Ikea', 'Other'];
 const deptChoices = ['Administration', 'Reception', 'Settlement', 'Language', 'IT', 'Finance', 'HR', 'Facilities', 'CELPIP', 'Kitchen'];
 
 const vendorColor = {
@@ -221,6 +221,45 @@ const ff = {
 
 export default function PurchaseOrders() {
   const { data: rawData, loading, error, refresh } = useSharePointList('purchaseOrders');
+
+  // ── Dynamic vendor list (synced with Inventory) ──
+  const [vendors, setVendors] = useState(FALLBACK_VENDORS);
+  const [showAddVendor, setShowAddVendor] = useState(false);
+  const [newVendorName, setNewVendorName] = useState('');
+  const [addingVendor, setAddingVendor] = useState(false);
+  const [addVendorError, setAddVendorError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const v = await getVendorChoices();
+        if (!cancelled && v.length > 0) setVendors(v);
+      } catch (err) {
+        console.warn('Could not load vendor choices — using fallback:', err.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleAddNewVendor = async () => {
+    const name = newVendorName.trim();
+    if (!name) { setAddVendorError('Vendor name cannot be empty'); return; }
+    if (vendors.some((v) => v.toLowerCase() === name.toLowerCase())) { setAddVendorError('That vendor already exists'); return; }
+    setAddingVendor(true);
+    setAddVendorError(null);
+    try {
+      const updated = await addVendorChoice(name);
+      setVendors(updated);
+      setPoVendor(name);
+      setShowAddVendor(false);
+      setNewVendorName('');
+    } catch (err) {
+      setAddVendorError(err.message || 'Failed to add vendor');
+    } finally {
+      setAddingVendor(false);
+    }
+  };
 
   // ── Form state ──
   const [showForm, setShowForm] = useState(false);
@@ -432,7 +471,7 @@ export default function PurchaseOrders() {
               <span style={ff.dropdownLabel}>Vendor</span>
               <select style={ff.dropdown} value={vendorFilter} onChange={(e) => setVendorFilter(e.target.value)}>
                 <option value="all">All vendors</option>
-                {vendorChoices.map((v) => <option key={v} value={v}>{v}</option>)}
+                {vendors.map((v) => <option key={v} value={v}>{v}</option>)}
               </select>
             </div>
             <div style={ff.dropdownWrap}>
@@ -531,10 +570,43 @@ export default function PurchaseOrders() {
               <div style={f.group}>
                 <label style={f.label}>Vendor *</label>
                 <div style={f.chips}>
-                  {vendorChoices.map(v => (
-                    <button key={v} style={f.chip(poVendor === v, vendorColor[v])} onClick={() => setPoVendor(v)}>{v}</button>
+                  {vendors.map(v => (
+                    <button type="button" key={v} style={f.chip(poVendor === v, vendorColor[v] || '#00d4ff')} onClick={() => setPoVendor(v)}>{v}</button>
                   ))}
+                  {!showAddVendor && (
+                    <button type="button"
+                      style={{ ...f.chip(false, '#00d4ff'), borderStyle: 'dashed', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      onClick={() => { setShowAddVendor(true); setAddVendorError(null); setNewVendorName(''); }}>
+                      + New
+                    </button>
+                  )}
                 </div>
+                {showAddVendor && (
+                  <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input
+                      style={{ ...f.input, flex: 1, minWidth: 180, minHeight: 40 }}
+                      placeholder="New vendor name..."
+                      value={newVendorName}
+                      onChange={(e) => setNewVendorName(e.target.value)}
+                      autoFocus
+                      disabled={addingVendor}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewVendor(); } }}
+                    />
+                    <button type="button"
+                      style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#00d4ff', color: '#061218', fontWeight: 700, fontSize: 12, cursor: addingVendor ? 'not-allowed' : 'pointer' }}
+                      onClick={handleAddNewVendor} disabled={addingVendor}>
+                      {addingVendor ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={12} />}
+                    </button>
+                    <button type="button"
+                      style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--glass-border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}
+                      onClick={() => { setShowAddVendor(false); setNewVendorName(''); setAddVendorError(null); }} disabled={addingVendor}>
+                      <X size={12} />
+                    </button>
+                  </div>
+                )}
+                {addVendorError && showAddVendor && (
+                  <div style={{ color: '#ff3d5a', fontSize: 12, marginTop: 6 }}>{addVendorError}</div>
+                )}
               </div>
 
               {poVendor === 'Other' && (

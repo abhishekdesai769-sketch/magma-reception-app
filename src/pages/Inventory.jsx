@@ -24,7 +24,7 @@ import {
 import { createPortal } from 'react-dom';
 import PageWrapper from '../components/Layout/PageWrapper';
 import { useSharePointList } from '../hooks/useSharePointList';
-import { updateInventoryItem, createInventoryItem, deleteInventoryItem, getInventoryCategoryChoices, addInventoryCategoryChoice } from '../services/graphApi';
+import { updateInventoryItem, createInventoryItem, deleteInventoryItem, getInventoryCategoryChoices, addInventoryCategoryChoice, getVendorChoices, addVendorChoice } from '../services/graphApi';
 import { useScanner } from '../hooks/useScanner';
 import { QR_PREFIX } from '../components/Inventory/QRSheet';
 import { QRCodeSVG } from 'qrcode.react';
@@ -184,7 +184,14 @@ export default function Inventory() {
   const [addingCategory, setAddingCategory] = useState(false);
   const [addCategoryError, setAddCategoryError] = useState(null);
 
-  // Load categories from SharePoint on mount
+  // ── Dynamic vendor list ──
+  const [vendors, setVendors] = useState(VENDORS);
+  const [showAddVendor, setShowAddVendor] = useState(null); // 'create' | 'edit' | null
+  const [newVendorName, setNewVendorName] = useState('');
+  const [addingVendor, setAddingVendor] = useState(false);
+  const [addVendorError, setAddVendorError] = useState(null);
+
+  // Load categories + vendors from SharePoint on mount
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -193,6 +200,14 @@ export default function Inventory() {
         if (!cancelled && choices.length > 0) setCategories(choices);
       } catch (err) {
         console.warn('Could not load category choices — using fallback list:', err.message);
+      }
+    })();
+    (async () => {
+      try {
+        const v = await getVendorChoices();
+        if (!cancelled && v.length > 0) setVendors(v);
+      } catch (err) {
+        console.warn('Could not load vendor choices — using fallback list:', err.message);
       }
     })();
     return () => { cancelled = true; };
@@ -225,6 +240,35 @@ export default function Inventory() {
       setAddCategoryError(err.message || 'Failed to add category (check permissions)');
     } finally {
       setAddingCategory(false);
+    }
+  };
+
+  const handleAddNewVendor = async (context) => {
+    const name = newVendorName.trim();
+    if (!name) {
+      setAddVendorError('Vendor name cannot be empty');
+      return;
+    }
+    if (vendors.some((v) => v.toLowerCase() === name.toLowerCase())) {
+      setAddVendorError('That vendor already exists');
+      return;
+    }
+    setAddingVendor(true);
+    setAddVendorError(null);
+    try {
+      const updated = await addVendorChoice(name);
+      setVendors(updated);
+      if (context === 'create') {
+        setForm((prev) => ({ ...prev, PreferredVendor: name }));
+      } else if (context === 'edit') {
+        setEditForm((prev) => ({ ...prev, PreferredVendor: name }));
+      }
+      setShowAddVendor(null);
+      setNewVendorName('');
+    } catch (err) {
+      setAddVendorError(err.message || 'Failed to add vendor (check permissions)');
+    } finally {
+      setAddingVendor(false);
     }
   };
 
@@ -872,14 +916,47 @@ ${sortedCats.map(cat => `
                 <div style={cr.formRow}>
                   <label style={cr.label}>Preferred Vendor</label>
                   <div style={cr.chipRow}>
-                    {VENDORS.map((v) => (
+                    {vendors.map((v) => (
                       <button type="button" key={v}
                         style={cr.chip(form.PreferredVendor === v, '#00d4ff')}
                         onClick={() => updateField('PreferredVendor', form.PreferredVendor === v ? '' : v)}>
                         {v}
                       </button>
                     ))}
+                    {showAddVendor !== 'create' ? (
+                      <button type="button"
+                        style={{ ...cr.chip(false, '#00d4ff'), borderStyle: 'dashed', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        onClick={() => { setShowAddVendor('create'); setAddVendorError(null); setNewVendorName(''); }}>
+                        <Plus size={12} /> New
+                      </button>
+                    ) : null}
                   </div>
+                  {showAddVendor === 'create' && (
+                    <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input
+                        style={{ ...cr.input, flex: 1, minWidth: 180 }}
+                        placeholder="New vendor name..."
+                        value={newVendorName}
+                        onChange={(e) => setNewVendorName(e.target.value)}
+                        autoFocus
+                        disabled={addingVendor}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewVendor('create'); } }}
+                      />
+                      <button type="button"
+                        style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#00d4ff', color: '#061218', fontWeight: 700, fontSize: 12, cursor: addingVendor ? 'not-allowed' : 'pointer' }}
+                        onClick={() => handleAddNewVendor('create')} disabled={addingVendor}>
+                        {addingVendor ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={12} />}
+                      </button>
+                      <button type="button"
+                        style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--glass-border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}
+                        onClick={() => { setShowAddVendor(null); setNewVendorName(''); setAddVendorError(null); }} disabled={addingVendor}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  )}
+                  {addVendorError && showAddVendor === 'create' && (
+                    <div style={{ color: '#ff3d5a', fontSize: 12, marginTop: 6 }}>{addVendorError}</div>
+                  )}
                 </div>
 
                 {/* Location */}
@@ -1042,14 +1119,47 @@ ${sortedCats.map(cat => `
                 <div style={cr.formRow}>
                   <label style={cr.label}>Preferred Vendor</label>
                   <div style={cr.chipRow}>
-                    {VENDORS.map((v) => (
+                    {vendors.map((v) => (
                       <button type="button" key={v}
                         style={cr.chip(editForm.PreferredVendor === v, '#00d4ff')}
                         onClick={() => updateEditField('PreferredVendor', editForm.PreferredVendor === v ? '' : v)}>
                         {v}
                       </button>
                     ))}
+                    {showAddVendor !== 'edit' ? (
+                      <button type="button"
+                        style={{ ...cr.chip(false, '#00d4ff'), borderStyle: 'dashed', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        onClick={() => { setShowAddVendor('edit'); setAddVendorError(null); setNewVendorName(''); }}>
+                        <Plus size={12} /> New
+                      </button>
+                    ) : null}
                   </div>
+                  {showAddVendor === 'edit' && (
+                    <div style={{ marginTop: 8, display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input
+                        style={{ ...cr.input, flex: 1, minWidth: 180 }}
+                        placeholder="New vendor name..."
+                        value={newVendorName}
+                        onChange={(e) => setNewVendorName(e.target.value)}
+                        autoFocus
+                        disabled={addingVendor}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddNewVendor('edit'); } }}
+                      />
+                      <button type="button"
+                        style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#00d4ff', color: '#061218', fontWeight: 700, fontSize: 12, cursor: addingVendor ? 'not-allowed' : 'pointer' }}
+                        onClick={() => handleAddNewVendor('edit')} disabled={addingVendor}>
+                        {addingVendor ? <Loader2 size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={12} />}
+                      </button>
+                      <button type="button"
+                        style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--glass-border)', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}
+                        onClick={() => { setShowAddVendor(null); setNewVendorName(''); setAddVendorError(null); }} disabled={addingVendor}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  )}
+                  {addVendorError && showAddVendor === 'edit' && (
+                    <div style={{ color: '#ff3d5a', fontSize: 12, marginTop: 6 }}>{addVendorError}</div>
+                  )}
                 </div>
 
                 {/* Location */}
