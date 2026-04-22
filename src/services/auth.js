@@ -19,6 +19,14 @@ export const loginRequest = {
 
 export const msalInstance = new PublicClientApplication(msalConfig);
 
+// Expose for admin/bulk-import scripts via browser console
+if (typeof window !== 'undefined') {
+  window.__magma = {
+    msalInstance,
+    loginRequest,
+  };
+}
+
 // Must be called before any MSAL operations
 export async function initializeMsal() {
   await msalInstance.initialize();
