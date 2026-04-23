@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Search,
@@ -20,6 +20,9 @@ import {
   Trash2,
   Save,
   ArrowLeft,
+  ChevronDown,
+  ChevronRight,
+  Filter,
 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import PageWrapper from '../components/Layout/PageWrapper';
@@ -64,16 +67,29 @@ const s = {
   modeToggle: { display: 'flex', gap: 0, borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--glass-border)' },
   modeBtn: (active, color) => ({ padding: 'var(--space-3) var(--space-6)', background: active ? color + '20' : 'rgba(255,255,255,0.03)', color: active ? color : 'var(--text-muted)', fontWeight: 700, fontSize: 'var(--text-sm)', cursor: 'pointer', border: 'none', minHeight: 48, display: 'flex', alignItems: 'center', gap: 'var(--space-2)', transition: 'all 0.2s' }),
   actionBtn: { display: 'flex', alignItems: 'center', gap: 'var(--space-2)', padding: 'var(--space-3) var(--space-5)', borderRadius: 'var(--radius-md)', background: 'rgba(255,255,255,0.06)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', fontWeight: 600, fontSize: 'var(--text-sm)', cursor: 'pointer', minHeight: 48 },
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 'var(--space-5)' },
-  card: { background: 'var(--glass-bg)', backdropFilter: 'blur(var(--glass-blur))', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-5)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', position: 'relative', overflow: 'hidden', cursor: 'pointer' },
-  cardName: { fontSize: 'var(--text-lg)', fontWeight: 700, color: 'var(--text-primary)' },
-  catBadge: (color) => ({ display: 'inline-block', padding: '2px 10px', borderRadius: 'var(--radius-full)', background: color + '18', color, fontSize: 'var(--text-xs)', fontWeight: 600, alignSelf: 'flex-start' }),
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 'var(--space-4)' },
+  card: { background: 'var(--glass-bg)', backdropFilter: 'blur(var(--glass-blur))', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-lg)', padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', position: 'relative', overflow: 'hidden', cursor: 'pointer' },
+  cardHeaderRow: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
+  cardName: { fontSize: 'var(--text-md)', fontWeight: 700, color: 'var(--text-primary)', lineHeight: 1.3, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' },
+  catBadge: (color) => ({ display: 'inline-block', padding: '2px 8px', borderRadius: 'var(--radius-full)', background: color + '18', color, fontSize: '10px', fontWeight: 600, alignSelf: 'flex-start' }),
   qtyRow: { display: 'flex', alignItems: 'baseline', gap: 'var(--space-2)' },
-  qtyNumber: (color) => ({ fontSize: '2.2rem', fontWeight: 800, color, lineHeight: 1 }),
-  qtyLabel: { fontSize: 'var(--text-xs)', color: 'var(--text-muted)' },
-  progressTrack: { width: '100%', height: 6, borderRadius: 3, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' },
-  progressFill: (percent, color) => ({ width: `${percent}%`, height: '100%', borderRadius: 3, background: color, transition: 'width 0.5s ease' }),
-  lowBadge: { position: 'absolute', top: 12, right: 12, padding: '3px 10px', borderRadius: 'var(--radius-full)', background: 'rgba(255,61,90,0.18)', color: '#ff3d5a', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 },
+  qtyNumber: (color) => ({ fontSize: '1.8rem', fontWeight: 800, color, lineHeight: 1 }),
+  qtyLabel: { fontSize: '10px', color: 'var(--text-muted)' },
+  progressTrack: { width: '100%', height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.06)', overflow: 'hidden' },
+  progressFill: (percent, color) => ({ width: `${percent}%`, height: '100%', borderRadius: 2, background: color, transition: 'width 0.5s ease' }),
+  lowBadge: { padding: '2px 8px', borderRadius: 'var(--radius-full)', background: 'rgba(255,61,90,0.18)', color: '#ff3d5a', fontSize: '9px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 3, flexShrink: 0, whiteSpace: 'nowrap', border: '1px solid rgba(255,61,90,0.35)' },
+  // ── Group headers ──
+  groupHeader: { display: 'flex', alignItems: 'center', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-4)', margin: 'var(--space-6) 0 var(--space-3) 0', background: 'rgba(255,255,255,0.03)', borderRadius: 'var(--radius-md)', border: '1px solid var(--glass-border)', cursor: 'pointer', userSelect: 'none' },
+  groupHeaderFirst: { marginTop: 0 },
+  groupHeaderTitle: { fontSize: 'var(--text-md)', fontWeight: 700, color: 'var(--text-primary)', flex: 1, display: 'flex', alignItems: 'center', gap: 8 },
+  groupHeaderCount: { fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 'var(--radius-full)', background: 'rgba(0,212,255,0.12)', color: '#00d4ff' },
+  groupHeaderLowCount: { fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 'var(--radius-full)', background: 'rgba(255,61,90,0.15)', color: '#ff3d5a' },
+  groupChevron: { color: 'var(--text-muted)', transition: 'transform 0.2s' },
+  // ── Quick filter chips ──
+  filterRow: { display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 'var(--space-4)' },
+  filterLabel: { fontSize: 11, fontWeight: 700, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 4 },
+  filterChip: (active, color = '#00d4ff') => ({ padding: '7px 14px', borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: 'pointer', border: '1px solid', borderColor: active ? color : 'var(--glass-border)', background: active ? color + '18' : 'transparent', color: active ? color : 'var(--text-muted)', transition: 'all 0.15s' }),
+  filterSelect: { padding: '7px 14px', borderRadius: 999, fontSize: 12, fontWeight: 600, background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', outline: 'none', cursor: 'pointer', minWidth: 140 },
   vendorBadge: { fontSize: 'var(--text-xs)', color: 'var(--text-dim)', marginTop: 'auto' },
   loadingWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-12)', gap: 'var(--space-4)', color: 'var(--text-muted)' },
   errorWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-12)', gap: 'var(--space-4)', color: '#ff3d5a' },
@@ -286,7 +302,7 @@ export default function Inventory() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [deleting, setDeleting] = useState(false);
 
-  const items = rawData.map((item) => ({
+  const items = useMemo(() => rawData.map((item) => ({
     id: item.id,
     name: item.fields?.Title || 'Unnamed',
     category: item.fields?.Category || 'Other',
@@ -297,11 +313,47 @@ export default function Inventory() {
     location: item.fields?.Location || '',
     estimatedCost: item.fields?.EstimatedCost ?? '',
     notes: item.fields?.Notes || '',
-  }));
+  })), [rawData]);
 
-  const filtered = items.filter((item) =>
-    item.name.toLowerCase().includes(search.toLowerCase())
+  // ── Filter state ──
+  const [quickFilter, setQuickFilter] = useState('all'); // 'all' | 'low'
+  const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' | specific category
+  const [collapsedGroups, setCollapsedGroups] = useState({}); // { 'Office Supplies': true, ... }
+
+  // ── Apply filters ──
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((item) => {
+      if (q && !item.name.toLowerCase().includes(q)) return false;
+      if (quickFilter === 'low' && !(item.threshold > 0 && item.quantity <= item.threshold)) return false;
+      if (categoryFilter !== 'all' && item.category !== categoryFilter) return false;
+      return true;
+    });
+  }, [items, search, quickFilter, categoryFilter]);
+
+  // ── Group by category (sorted alphabetically) ──
+  const grouped = useMemo(() => {
+    const map = new Map();
+    filtered.forEach((item) => {
+      const cat = item.category || 'Other';
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat).push(item);
+    });
+    // Sort each category's items by name
+    map.forEach((arr) => arr.sort((a, b) => a.name.localeCompare(b.name)));
+    // Sort category names alphabetically
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [filtered]);
+
+  // ── Low stock count for filter chip label ──
+  const lowStockCount = useMemo(
+    () => items.filter((i) => i.threshold > 0 && i.quantity <= i.threshold).length,
+    [items]
   );
+
+  const toggleGroup = (cat) => {
+    setCollapsedGroups((prev) => ({ ...prev, [cat]: !prev[cat] }));
+  };
 
   const handleCardClick = (item) => {
     setSelectedItem(item);
@@ -708,47 +760,114 @@ ${sortedCats.map(cat => `
           </motion.button>
         </motion.div>
 
+        {/* Quick Filter Chips */}
+        <div style={s.filterRow}>
+          <span style={s.filterLabel}><Filter size={11} style={{ verticalAlign: 'middle', marginRight: 2 }} /> FILTER:</span>
+          <button type="button" style={s.filterChip(quickFilter === 'all')} onClick={() => setQuickFilter('all')}>
+            All ({items.length})
+          </button>
+          <button type="button" style={s.filterChip(quickFilter === 'low', '#ff3d5a')} onClick={() => setQuickFilter('low')}>
+            <AlertTriangle size={11} style={{ verticalAlign: 'middle', marginRight: 4 }} />Low Stock ({lowStockCount})
+          </button>
+          <select style={s.filterSelect} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+            <option value="all">All categories</option>
+            {categories.map((cat) => <option key={cat} value={cat}>{cat}</option>)}
+          </select>
+          {(quickFilter !== 'all' || categoryFilter !== 'all' || search) && (
+            <button type="button"
+              style={{ ...s.filterChip(false), color: '#ff3d5a', borderColor: 'rgba(255,61,90,0.3)', background: 'rgba(255,61,90,0.05)' }}
+              onClick={() => { setQuickFilter('all'); setCategoryFilter('all'); setSearch(''); }}>
+              <X size={11} style={{ verticalAlign: 'middle', marginRight: 2 }} /> Clear
+            </button>
+          )}
+        </div>
+
         {/* Tap hint */}
         <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 16, textAlign: 'center' }}>
           Tap an item to {modeLabel.toLowerCase()}, or scan a QR code
         </div>
 
-        {/* Item Grid */}
-        <motion.div style={s.grid} variants={stagger}>
-          {filtered.map((item, i) => {
-            const isLow = item.threshold > 0 && item.quantity <= item.threshold;
-            const stockColor = getStockColor(item.quantity, item.threshold);
-            const percent = getStockPercent(item.quantity, item.threshold);
-            const catColor = categoryColor[item.category] || '#8b949e';
-            return (
-              <motion.div key={item.id} style={{ ...s.card, borderColor: mode === 'out' ? 'rgba(255,61,90,0.15)' : 'var(--glass-border)' }}
-                variants={fadeInUp} custom={1 + i}
-                whileHover={{ y: -4, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', borderColor: modeColor + '40' }}
-                transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                onClick={() => handleCardClick(item)}>
-                {isLow && (
-                  <motion.div style={s.lowBadge} animate={{ opacity: [1, 0.5, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
-                    <AlertTriangle size={10} /> LOW STOCK
-                  </motion.div>
-                )}
-                <div style={s.cardName}>{item.name}</div>
-                <span style={s.catBadge(catColor)}>{item.category}</span>
-                <div style={s.qtyRow}>
-                  <span style={s.qtyNumber(stockColor)}>{item.quantity}</span>
-                  <span style={s.qtyLabel}>{item.unit ? `${item.unit} ` : ''}/ {item.threshold} threshold</span>
-                </div>
-                <div style={s.progressTrack}><div style={s.progressFill(percent, stockColor)} /></div>
-                <div style={s.vendorBadge}>Preferred: {item.vendor}</div>
-              </motion.div>
-            );
-          })}
-        </motion.div>
-
-        {filtered.length === 0 && !loading && (
+        {/* Grouped Item Grid */}
+        {grouped.length === 0 && !loading && (
           <div style={{ textAlign: 'center', padding: 'var(--space-12)', color: 'var(--text-dim)' }}>
-            {search ? 'No items match your search.' : 'No inventory items found.'}
+            {search || quickFilter !== 'all' || categoryFilter !== 'all'
+              ? 'No items match your filters.'
+              : 'No inventory items found.'}
           </div>
         )}
+        {grouped.map(([category, categoryItems], gIdx) => {
+          const catColor = categoryColor[category] || '#8b949e';
+          const isCollapsed = !!collapsedGroups[category];
+          const lowInGroup = categoryItems.filter((i) => i.threshold > 0 && i.quantity <= i.threshold).length;
+          return (
+            <div key={category}>
+              <div
+                style={{ ...s.groupHeader, ...(gIdx === 0 ? s.groupHeaderFirst : {}) }}
+                onClick={() => toggleGroup(category)}
+              >
+                <motion.div animate={{ rotate: isCollapsed ? -90 : 0 }} style={s.groupChevron}>
+                  <ChevronDown size={16} />
+                </motion.div>
+                <div style={s.groupHeaderTitle}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: catColor, flexShrink: 0 }} />
+                  {category}
+                </div>
+                <span style={s.groupHeaderCount}>{categoryItems.length}</span>
+                {lowInGroup > 0 && (
+                  <span style={s.groupHeaderLowCount}>{lowInGroup} low</span>
+                )}
+              </div>
+              <AnimatePresence initial={false}>
+                {!isCollapsed && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.25 }}
+                    style={{ overflow: 'hidden' }}
+                  >
+                    <div style={s.grid}>
+                      {categoryItems.map((item, i) => {
+                        const isLow = item.threshold > 0 && item.quantity <= item.threshold;
+                        const stockColor = getStockColor(item.quantity, item.threshold);
+                        const percent = getStockPercent(item.quantity, item.threshold);
+                        return (
+                          <motion.div
+                            key={item.id}
+                            style={{ ...s.card, borderColor: mode === 'out' ? 'rgba(255,61,90,0.15)' : 'var(--glass-border)' }}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: Math.min(i * 0.02, 0.2) }}
+                            whileHover={{ y: -3, boxShadow: '0 8px 24px rgba(0,0,0,0.4)', borderColor: modeColor + '40' }}
+                            onClick={() => handleCardClick(item)}
+                          >
+                            <div style={s.cardHeaderRow}>
+                              <div style={s.cardName}>{item.name}</div>
+                              {isLow && (
+                                <motion.div style={s.lowBadge} animate={{ opacity: [1, 0.6, 1] }} transition={{ duration: 1.5, repeat: Infinity }}>
+                                  <AlertTriangle size={9} /> LOW
+                                </motion.div>
+                              )}
+                            </div>
+                            <span style={s.catBadge(catColor)}>{item.category}</span>
+                            <div style={s.qtyRow}>
+                              <span style={s.qtyNumber(stockColor)}>{item.quantity}</span>
+                              <span style={s.qtyLabel}>{item.unit ? `${item.unit} ` : ''}/ {item.threshold} threshold</span>
+                            </div>
+                            <div style={s.progressTrack}><div style={s.progressFill(percent, stockColor)} /></div>
+                            {item.vendor && item.vendor !== '—' && (
+                              <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 'auto' }}>Preferred: {item.vendor}</div>
+                            )}
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
       </motion.div>
 
       {/* ── Scanner Overlay ── */}
